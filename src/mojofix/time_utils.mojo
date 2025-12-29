@@ -239,3 +239,57 @@ fn format_utc_date_only(timestamp: Float64) -> String:
     result += pad_int(month, 2)
     result += pad_int(day, 2)
     return result
+
+fn format_time_only(timestamp: Float64, precision: Int = 3) -> String:
+    """Format Unix timestamp as time-only (HH:MM:SS[.sss]).
+    
+    :param timestamp: Unix timestamp
+    :param precision: Decimal places: 0 (seconds), 3 (ms), or 6 (us)
+    :return: Formatted time string
+    """
+    return format_utc_time_only(timestamp, precision)
+
+fn format_local_mkt_date(timestamp: Float64) -> String:
+    """Format Unix timestamp as LocalMktDate (YYYYMMDD).
+    
+    Same as UTCDateOnly format.
+    
+    :param timestamp: Unix timestamp
+    :return: Formatted date string (YYYYMMDD)
+    """
+    return format_utc_date_only(timestamp)
+
+fn format_month_year(timestamp: Float64) -> String:
+    """Format Unix timestamp as MonthYear (YYYYMM).
+    
+    :param timestamp: Unix timestamp
+    :return: Formatted month-year string (YYYYMM)
+    """
+    var total_seconds = Int(timestamp)
+    var days_since = total_seconds // 86400
+    
+    var year = 1970
+    var days = days_since
+    
+    while True:
+        var days_in_year = 366 if is_leap_year(year) else 365
+        if days < days_in_year:
+            break
+        days -= days_in_year
+        year += 1
+    
+    var month = 1
+    var day = days + 1
+    
+    var days_in_months = get_days_in_months(year)
+    for i in range(12):
+        if day <= days_in_months[i]:
+            month = i + 1
+            break
+        day -= days_in_months[i]
+    
+    var result = String("")
+    result += pad_int(year, 4)
+    result += pad_int(month, 2)
+    
+    return result
