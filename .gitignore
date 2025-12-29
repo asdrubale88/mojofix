@@ -1,3 +1,26 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+# Mojo/Python artifacts
+__pycache__/
+*.pyc
+*.mojopkg
+*.o
+*.so
+.ipynb_checkpoints
+
+# Environments
+venv/
+.env
+
+# Build outputs
+build/
+dist/
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# Benchmarks validation output
+benchmark_data.json
