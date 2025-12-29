@@ -176,7 +176,7 @@ fn main() raises:
 - [x] SIMD optimizations
 - [x] Comprehensive test suite
 - [x] HFT zero-copy module (Available in `mojofix.experimental.hft`)
-- [ ] SIMD delimiter scanning (Target: 10M msg/s)
+- [ ] Explicit SIMD delimiter scanning (Target: 10M msg/s)
 - [ ] Multi-threading support
 
 ## 📝 License
