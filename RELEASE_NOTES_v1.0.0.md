@@ -1,48 +1,52 @@
-# 🚀 Mojofix v1.0.0 - Production Ready
+# Release v1.0.0 🚀
 
-High-performance FIX protocol library for Mojo - **2x faster than QuickFIX C++**
+We are thrilled to announce the first stable release of **Mojofix**, a high-performance Financial Information eXchange (FIX) protocol library for Mojo!
 
-## ✨ Key Features
+Mojofix is designed to be a drop-in replacement for Python's `simplefix` but with significantly higher performance, leveraging Mojo's system-level capabilities.
 
-- **🚀 High Performance**: 655k-938k msg/sec (2x faster than QuickFIX C++)
-- **✅ 100% Compatible**: Drop-in replacement for Python's simplefix
-- **🔒 Production Ready**: All 25 simplefix compatibility tests passing
-- **⚡ SIMD Optimized**: 4-8x faster checksum calculation
-- **🎯 Zero Dependencies**: Pure Mojo implementation
+## 🌟 Highlights
 
-## 📊 Performance
+*   **100% Feature Compatibility**: Fully passes the `simplefix` compatibility test suite (25/25 tests).
+*   **High Performance**:
+    *   **Safe Parser**: ~600k msg/sec (Comparable to optimized C++ engines).
+    *   **HFT Parser (Experimental)**: **>5.7M msg/sec** (9x faster) for ultra-low latency requirements.
+*   **Zero Dependencies**: Pure Mojo implementation.
+*   **Full Protocol Support**: Handles FIX 4.2, 4.4, 5.0SP2, repeating groups, and binary fields.
 
-| Operation | Throughput | vs QuickFIX C++ |
-|-----------|------------|-----------------|
-| **Parsing** | ~655k msg/sec | **1.5x faster** |
-| **Encoding** | ~938k msg/sec | **2.1x faster** |
+## 🚀 Performance Benchmarks
 
-## 🚀 Installation
+| Message Type | Safe Parser | HFT Parser | Speedup |
+| :--- | :--- | :--- | :--- |
+| **Short (Heartbeat)** | 612k msg/s | **5.7M msg/s** | **9.3x** |
+| **Medium (Order)** | 272k msg/s | **2.0M msg/s** | **7.5x** |
+| **Long (Snapshot)** | 36k msg/s | **228k msg/s** | **6.3x** |
+
+## 📦 Installation
 
 ```bash
-# Clone and build
-git clone https://github.com/asdrubale88/mojofix
-cd mojofix
-pixi install
-pixi run test
+pixi add mojofix
 ```
 
-## 📚 Documentation
+## 🛠️ Usage
 
-- [README](https://github.com/asdrubale88/mojofix/blob/main/README.md) - Complete guide
-- [API Reference](https://github.com/asdrubale88/mojofix/blob/main/API.md) - Full API docs
-- [Examples](https://github.com/asdrubale88/mojofix/tree/main/examples) - Code examples
-- [Contributing](https://github.com/asdrubale88/mojofix/blob/main/CONTRIBUTING.md) - Development guide
+**Standard Safe Usage:**
+```mojo
+from mojofix import FixMessage, FixParser
 
-## 🎯 What's Included
+var msg = FixMessage()
+msg.append_pair(35, "D")
+print(msg.encode())
+```
 
-✅ Complete FIX protocol implementation  
-✅ 25/25 simplefix compatibility tests passing  
-✅ SIMD-optimized performance  
-✅ Comprehensive documentation  
-✅ Working examples  
-✅ MIT License  
+**Experimental HFT Usage (Zero-Copy):**
+```mojo
+from mojofix.experimental.hft import FastParser, FastMessage
+
+var parser = FastParser()
+var msg = FastMessage("")
+parser.parse_into(raw_data, msg) # Zero allocations
+```
 
 ## 🙏 Acknowledgments
 
-Based on the Python [simplefix](https://github.com/da4089/simplefix) library by David Arnold.
+Big thanks to the [simplefix](https://github.com/da4089/simplefix) project for the inspiration and robustness standards.
