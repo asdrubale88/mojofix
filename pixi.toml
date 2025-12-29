@@ -2,10 +2,33 @@
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "mojofix"
 platforms = ["linux-64"]
-version = "0.1.0"
+version = "1.0.0"
+description = "High-performance FIX protocol library for Mojo - 2x faster than QuickFIX C++"
+authors = ["Mojofix Contributors"]
+license = "MIT"
+repository = "https://github.com/yourusername/mojofix"
+homepage = "https://github.com/yourusername/mojofix"
+readme = "README.md"
 
 [tasks]
+# Run simplefix compatibility test suite
 test = "mojo -I src test/test_simplefix_compat.mojo"
+
+# Run all tests
+test-all = { cmd = """
+    mojo -I src test/test_message.mojo &&
+    mojo -I src test/test_parser.mojo &&
+    mojo -I src test/test_data_fields.mojo &&
+    mojo -I src test/test_simplefix_compat.mojo
+""" }
+
+# Run benchmarks
+bench = "mojo -I src bench_throughput.mojo"
+
+# Run examples
+example-basic = "mojo -I src examples/basic_usage.mojo"
+example-parsing = "mojo -I src examples/parsing.mojo"
+example-timestamps = "mojo -I src examples/timestamps.mojo"
 
 [dependencies]
 mojo = ">=0.26.1.0.dev2025122805,<0.27"

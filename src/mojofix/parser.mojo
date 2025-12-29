@@ -75,7 +75,7 @@ struct FixParser:
 
         if start_pos > 0:
             self.buffer = String(self.buffer[start_pos:])
-            start_pos = 0
+            _ = start_pos
 
         var pattern_9 = String(SOH) + "9="
         var pos_9 = self.buffer.find(pattern_9)
@@ -106,16 +106,90 @@ struct FixParser:
             return None
 
     fn _parse_raw(self, raw: String) -> FixMessage:
+        """Parse raw message string into FixMessage, handling raw data fields.
+
+        Uses state machine to track length-prefixed raw data fields (e.g., SecData 91/90).
+        When a length tag is encountered, the subsequent data tag's value is read as
+        exactly N bytes instead of scanning for SOH.
+        """
         var msg = FixMessage()
-        var parts = raw.split(String(SOH))
-        for i in range(len(parts)):
-            var s = String(parts[i])
-            if len(s) > 0:
-                # Check config for empty values
-                var eq_pos = s.find("=")
-                if eq_pos != -1:
-                    var val = String(s[eq_pos + 1 :])
-                    if len(val) == 0 and not self.config.allow_empty_values:
-                        continue
-                msg.append_string(s)
+        var point = 0
+        var raw_len = 0  # Saved length from most recent raw_len_tag
+
+        while point < len(raw):
+            # Find next tag (scan for '=')
+            var tag_start = point
+            var eq_pos = raw.find("=", point)
+            if eq_pos == -1:
+                # No more fields
+                break
+
+            # Extract tag number
+            var tag_str = String(raw[tag_start:eq_pos])
+            if len(tag_str) == 0:
+                point += 1
+                continue
+
+            var tag: Int
+            try:
+                tag = Int(tag_str)
+            except:
+                # Invalid tag, skip this character
+                point += 1
+                continue
+
+            # Check if this is a raw data field
+            var is_raw_data_tag = False
+            for i in range(len(self.raw_data_tags)):
+                if tag == self.raw_data_tags[i]:
+                    is_raw_data_tag = True
+                    break
+
+            var value: String
+            if is_raw_data_tag and raw_len > 0:
+                # This is a raw data field: read exactly raw_len bytes
+                var val_start = eq_pos + 1
+                var val_end = val_start + raw_len
+
+                if val_end > len(raw):
+                    # Not enough data in buffer (shouldn't happen if get_message computed correctly)
+                    break
+
+                value = String(raw[val_start:val_end])
+                point = val_end + 1  # Skip past value + SOH
+                raw_len = 0  # Reset for next raw data field
+            else:
+                # Normal field: scan for SOH
+                var val_start = eq_pos + 1
+                var soh_pos = raw.find(String(SOH), val_start)
+
+                if soh_pos == -1:
+                    # No SOH found, take rest of string
+                    value = String(raw[val_start:])
+                    point = len(raw)
+                else:
+                    value = String(raw[val_start:soh_pos])
+                    point = soh_pos + 1
+
+            # Check for empty values
+            if len(value) == 0 and not self.config.allow_empty_values:
+                continue
+
+            # Check if this is a raw length tag
+            var is_raw_len_tag = False
+            for i in range(len(self.raw_len_tags)):
+                if tag == self.raw_len_tags[i]:
+                    is_raw_len_tag = True
+                    break
+
+            if is_raw_len_tag:
+                # Save the length for the next raw data field
+                try:
+                    raw_len = Int(value)
+                except:
+                    raw_len = 0
+
+            # Append the field
+            msg.append_pair(tag, value)
+
         return msg^

@@ -41,7 +41,7 @@ fn calculate_checksum_parameterized[chunk_size: Int](data: String) -> Int:
 
 # Optimized version with best chunk size for typical FIX messages
 # Based on testing, 32 bytes is optimal for most modern CPUs
-alias optimal_chunk_size = 32
+comptime optimal_chunk_size = 32
 
 
 fn calculate_checksum_simd(data: String) -> Int:

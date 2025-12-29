@@ -294,12 +294,10 @@ struct FixMessage(Copyable, Movable, Stringable):
         out_msg += String("9=") + String(body_len) + soh
         out_msg += body_content
 
-        var csum = 0
-        var bytes_vec = out_msg.as_bytes()
-        for i in range(len(bytes_vec)):
-            csum += Int(bytes_vec[i])
+        # Calculate checksum using SIMD-optimized implementation
+        from mojofix.simd_utils import checksum_hot_path
 
-        csum = csum % 256
+        var csum = checksum_hot_path(out_msg)
         var csum_str = String(csum)
         while len(csum_str) < 3:
             csum_str = String("0") + csum_str
@@ -314,9 +312,12 @@ struct FixMessage(Copyable, Movable, Stringable):
     fn __str__(self) -> String:
         return self.encode(True)
 
-    fn append_utc_date_only(mut self, tag: Int, timestamp: Float64, header: Bool = False):
+    fn append_utc_date_only(
+        mut self, tag: Int, timestamp: Float64, header: Bool = False
+    ):
         """Append UTC date-only field (YYYYMMDD format)."""
         from mojofix.time_utils import format_utc_date_only
+
         var formatted = format_utc_date_only(timestamp)
         self.append_pair(tag, formatted, header)
 
@@ -324,17 +325,17 @@ struct FixMessage(Copyable, Movable, Stringable):
         """Remove all fields from message."""
         self.fields = List[FixField]()
         self.header_fields = List[FixField]()
-    
+
     fn count_fields(self) -> Int:
         """Count total fields in message.
-        
+
         :return: Total number of fields (header + body)
         """
         return len(self.header_fields) + len(self.fields)
-    
+
     fn has_field(self, tag: Int) -> Bool:
         """Check if field exists in message.
-        
+
         :param tag: FIX field tag number
         :return: True if field exists, False otherwise
         """
@@ -347,10 +348,10 @@ struct FixMessage(Copyable, Movable, Stringable):
             if self.fields[i].tag == tag:
                 return True
         return False
-    
+
     fn clone(self) -> FixMessage:
         """Create a deep copy of the message.
-        
+
         :return: New message with copied fields
         """
         var new_msg = FixMessage()
@@ -361,14 +362,14 @@ struct FixMessage(Copyable, Movable, Stringable):
         for i in range(len(self.fields)):
             new_msg.fields.append(self.fields[i].copy())
         return new_msg^
-    
+
     fn reset(mut self):
         """Clear all fields and reset message for reuse."""
         self.clear()
-    
+
     fn get_all(self, tag: Int) -> List[String]:
         """Get all occurrences of a tag.
-        
+
         :param tag: FIX field tag number
         :return: List of all values for this tag
         """
@@ -382,12 +383,12 @@ struct FixMessage(Copyable, Movable, Stringable):
             if self.fields[i].tag == tag:
                 values.append(self.fields[i].value)
         return values^
-    
+
     fn validate(self) -> Bool:
         """Validate message structure.
-        
+
         Checks for required fields and proper structure.
-        
+
         :return: True if valid, False otherwise
         """
         # Check required fields: BeginString (8), MsgType (35)
@@ -395,52 +396,53 @@ struct FixMessage(Copyable, Movable, Stringable):
             return False
         if not self.has_field(35):
             return False
-        
+
         # Message is valid if it has required fields
         return True
-        if not self.has_field(9):
-            return False
-        if not self.has_field(35):
-            return False
-        
-        # Encode and verify checksum
-        try:
-            var encoded = self.encode()
-            # If encoding succeeds, message is structurally valid
-            return True
-        except:
-            return False
 
-    fn append_time_only(mut self, tag: Int, timestamp: Float64, precision: Int = 3, header: Bool = False):
+    fn append_time_only(
+        mut self,
+        tag: Int,
+        timestamp: Float64,
+        precision: Int = 3,
+        header: Bool = False,
+    ):
         """Append time-only field (HH:MM:SS[.sss] format).
-        
+
         :param tag: FIX field tag number
         :param timestamp: Unix timestamp
         :param precision: Decimal places (0, 3, or 6)
         :param header: If True, append to header
         """
         from mojofix.time_utils import format_time_only
+
         var formatted = format_time_only(timestamp, precision)
         self.append_pair(tag, formatted, header)
-    
-    fn append_local_mkt_date(mut self, tag: Int, timestamp: Float64, header: Bool = False):
+
+    fn append_local_mkt_date(
+        mut self, tag: Int, timestamp: Float64, header: Bool = False
+    ):
         """Append LocalMktDate field (YYYYMMDD format).
-        
+
         :param tag: FIX field tag number
         :param timestamp: Unix timestamp
         :param header: If True, append to header
         """
         from mojofix.time_utils import format_local_mkt_date
+
         var formatted = format_local_mkt_date(timestamp)
         self.append_pair(tag, formatted, header)
-    
-    fn append_month_year(mut self, tag: Int, timestamp: Float64, header: Bool = False):
+
+    fn append_month_year(
+        mut self, tag: Int, timestamp: Float64, header: Bool = False
+    ):
         """Append MonthYear field (YYYYMM format).
-        
+
         :param tag: FIX field tag number
         :param timestamp: Unix timestamp
         :param header: If True, append to header
         """
         from mojofix.time_utils import format_month_year
+
         var formatted = format_month_year(timestamp)
         self.append_pair(tag, formatted, header)
