@@ -12,7 +12,7 @@ Thank you for your interest in contributing to Mojofix! This document provides g
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/mojofix
+   git clone https://github.com/asdrubale88/mojofix
    cd mojofix
    ```
 

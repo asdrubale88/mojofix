@@ -32,7 +32,7 @@
 pixi add mojofix
 
 # Or clone and build
-git clone https://github.com/yourusername/mojofix
+git clone https://github.com/asdrubale88/mojofix
 cd mojofix
 pixi install
 ```

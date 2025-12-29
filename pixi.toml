@@ -6,8 +6,8 @@ version = "1.0.0"
 description = "High-performance FIX protocol library for Mojo - 2x faster than QuickFIX C++"
 authors = ["Mojofix Contributors"]
 license = "MIT"
-repository = "https://github.com/yourusername/mojofix"
-homepage = "https://github.com/yourusername/mojofix"
+repository = "https://github.com/asdrubale88/mojofix"
+homepage = "https://github.com/asdrubale88/mojofix"
 readme = "README.md"
 
 [tasks]
