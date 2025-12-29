@@ -8,7 +8,7 @@
 
 ## ✨ Features
 
-- **🚀 High Performance**: 4.1M msg/sec (Zero-Copy Parser), 1.8M msg/sec (Safe Parser)
+- **🚀 High Performance**: 5.7M msg/sec (Zero-Copy Parser), ~600k msg/sec (Safe Parser)
 - **✅ 100% Compatible**: Drop-in replacement for Python's simplefix
 - **🔒 Production Ready**: All 25 simplefix compatibility tests passing
 - **⚡ SIMD Optimized**: 4-8x faster checksum calculation (Auto-Vectorized)
@@ -16,13 +16,13 @@
 
 ## 📊 Performance
 
-| Implementation | Throughput | vs QuickFIX C++ (est) |
-|-----------|------------|-----------------|
-| **Safe Parser (Core)** | ~1.8M msg/sec | **~3x faster** |
-| **HFT Parser (Reuse)** | **~4.1M msg/sec** | **~8x faster** |
-| **Encoding** | ~1.0M msg/sec | **2x faster** |
+| Message Type | Safe Parser | HFT Parser | Speedup |
+| :--- | :--- | :--- | :--- |
+| **Short (Heartbeat)** | 612k msg/s | **5.7M msg/s** | **9.3x** |
+| **Medium (Order)** | 272k msg/s | **2.0M msg/s** | **7.5x** |
+| **Long (Snapshot)** | 36k msg/s | **228k msg/s** | **6.3x** |
 
-*Benchmarked on single thread with FIX.4.2 NewOrderSingle messages*
+*Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2)*
 
 ## 🚀 Quick Start
 
@@ -111,7 +111,7 @@ pixi run mojo -I src test/test_parser.mojo
 pixi run mojo -I src test/test_data_fields.mojo
 
 # Run benchmarks
-pixi run mojo -I src bench_throughput.mojo
+pixi run mojo -I src benchmarks/bench_comprehensive.mojo
 ```
 
 **Test Coverage**: 25/25 simplefix compatibility tests passing ✅
@@ -146,8 +146,8 @@ For ultra-low latency applications, `mojofix` provides an experimental HFT modul
 
 | Feature | Safe Parser (`mojofix`) | HFT Parser (`mojofix.experimental.hft`) |
 |---------|-------------------------|------------------------------------------|
-| **Speed** | ~1.8M msg/sec | **~4.1M msg/sec** (2.2x faster) |
-| **Latency** | ~0.55 μs | **~0.24 μs** |
+| **Speed** | ~600k msg/sec | **~5.7M msg/sec** (9x faster) |
+| **Latency** | ~1.60 μs | **~0.17 μs** |
 | **Memory** | Safe (Heap + Dict) | Manual w/ Indexing |
 | **Design** | Allocation per message | Zero-copy parsing + Message Reuse |
 | **Status** | Production Ready | Experimental |
@@ -194,5 +194,4 @@ Based on the Python [simplefix](https://github.com/da4089/simplefix) library by 
 ---
 
 **Status**: Production-ready v1.0 ✅  
-**Status**: Production-ready v1.0 ✅  
-**Performance**: >4M msg/sec (HFT Mode) 🚀
+**Performance**: >5M msg/sec (HFT Mode) 🚀

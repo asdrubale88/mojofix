@@ -1,138 +1,260 @@
-"""Comprehensive performance benchmark suite for mojofix.
+from python import Python, PythonObject
+from mojofix import FixParser, FixMessage
+from mojofix.experimental.hft import FastParser, FastMessage
 
-Measures all aspects of performance to verify C/C++ level speed.
-"""
 
-from mojofix.message import FixMessage
-from mojofix.parser import FixParser
-from mojofix.zero_copy import parse_zero_copy
-from mojofix.buffer_pool import BufferPool
-from mojofix.simd_utils import (
-    calculate_checksum_simd,
-    calculate_checksum_scalar,
-)
-from mojofix.time_utils import format_utc_timestamp
+# Helper to format float to string with precision
+fn fmt_float(val: Float64) -> String:
+    var i_part = Int(val)
+    var d_part = Int((val - Float64(i_part)) * 100)
+    var s_d = String(d_part)
+    if d_part < 10:
+        s_d = "0" + s_d
+    return String(i_part) + "." + s_d
+
+
+fn generate_short() -> String:
+    var msg = FixMessage()
+    msg.append_pair(8, "FIX.4.2")
+    msg.append_pair(35, "0")
+    msg.append_pair(49, "SENDER")
+    msg.append_pair(56, "TARGET")
+    msg.append_pair(34, "1")
+    msg.append_pair(52, "20250101-12:00:00.000")
+    return msg.encode()
+
+
+fn generate_medium() -> String:
+    # Execution Report (~300 bytes)
+    var msg = FixMessage()
+    msg.append_pair(8, "FIX.4.4")
+    msg.append_pair(35, "8")
+    msg.append_pair(49, "SENDER")
+    msg.append_pair(56, "TARGET")
+    msg.append_pair(34, "100")
+    msg.append_pair(52, "20250101-12:00:00.000")
+
+    msg.append_pair(37, "ORDERID123456789")
+    msg.append_pair(11, "CLORDID123456789")
+    msg.append_pair(17, "EXECID123456789")
+    msg.append_pair(150, "0")
+    msg.append_pair(39, "0")
+    msg.append_pair(55, "MSFT")
+    msg.append_pair(54, "1")
+    msg.append_pair(38, "1000")
+    msg.append_pair(44, "150.50")
+    msg.append_pair(32, "0")
+    msg.append_pair(31, "0.0")
+    msg.append_pair(151, "1000")
+    msg.append_pair(14, "0")
+    msg.append_pair(6, "150.50")
+    msg.append_pair(60, "20250101-12:00:00.000")
+    msg.append_pair(58, "FILL ORDER COMPLETED SUCCESSFULLY")
+
+    return msg.encode()
+
+
+fn generate_long() -> String:
+    # MarketDataSnapshot (~1.5KB) with Repeating Groups
+    # Note: mojo-fix simple FixMessage doesn't strictly enforce group structure in encode()
+    # but generates valid tag=value streams. We'll simulate groups by appending tags sequentially.
+    var msg = FixMessage()
+    msg.append_pair(8, "FIXT.1.1")
+    msg.append_pair(35, "W")
+    msg.append_pair(49, "MARKETDATA")
+    msg.append_pair(56, "CLIENT")
+    msg.append_pair(34, "1000")
+    msg.append_pair(52, "20250101-12:00:00.000")
+
+    msg.append_pair(262, "SNAPSHOT_REQ_ID")
+    msg.append_pair(55, "NVDA")
+    msg.append_pair(48, "US67066G1040")
+    msg.append_pair(22, "4")
+
+    msg.append_pair(268, "20")  # 20 entries of MDEntries
+
+    for i in range(10):
+        # Bid
+        msg.append_pair(269, "0")
+        msg.append_pair(270, "145.50")
+        msg.append_pair(271, "100")
+        msg.append_pair(272, "20250101")
+        msg.append_pair(273, "12:00:00.000")
+        msg.append_pair(290, "1")
+        msg.append_pair(274, "1")
+        msg.append_pair(276, "0")
+        msg.append_pair(277, "1")
+        msg.append_pair(1023, "1")
+        msg.append_pair(282, "1")
+
+        # Offer
+        msg.append_pair(269, "1")
+        msg.append_pair(270, "145.55")
+        msg.append_pair(271, "100")
+        msg.append_pair(272, "20250101")
+        msg.append_pair(273, "12:00:00.000")
+        msg.append_pair(290, "1")
+        msg.append_pair(274, "1")
+        msg.append_pair(276, "0")
+        msg.append_pair(277, "1")
+        msg.append_pair(1023, "1")
+        msg.append_pair(282, "1")
+
+    return msg.encode()
+
+
+fn run_benchmark(
+    name: String,
+    msg: String,
+    iterations: Int,
+    time_module: PythonObject,
+    run_fast: Bool,
+) raises -> String:
+    print("Benchmarking " + name + "...")
+
+    var start_time: Float64 = 0.0
+    var end_time: Float64 = 0.0
+    var total_valid: Int = 0
+
+    if run_fast:
+        var parser = FastParser()
+        var reusable_msg = FastMessage("")
+
+        # Check correctness once
+        parser.parse_into(msg, reusable_msg)
+        if reusable_msg.get(35) == "":
+            print("ERROR: HFT Parser failed to parse message!")
+
+        start_time = Float64(time_module.time())
+        for _ in range(iterations):
+            parser.parse_into(msg, reusable_msg)
+            _ = reusable_msg.get(35)
+        end_time = Float64(time_module.time())
+        total_valid = iterations
+
+    else:
+        var parser = FixParser()
+
+        # Check correctness once
+        parser.append_buffer(msg)
+        var m_check = parser.get_message()
+        if not m_check:
+            print(
+                "ERROR: Safe Parser failed to parse message! Invalid BodyLength"
+                " or Checksum?"
+            )
+        else:
+            _ = m_check.value().get(35)
+
+        start_time = Float64(time_module.time())
+        for _ in range(iterations):
+            var local_parser = FixParser()
+            local_parser.append_buffer(msg)
+            var m = local_parser.get_message()
+            if m:
+                _ = m.value().get(35)
+                total_valid += 1
+        end_time = Float64(time_module.time())
+
+    if total_valid < iterations:
+        print(
+            "WARNING: Only "
+            + String(total_valid)
+            + "/"
+            + String(iterations)
+            + " messages passed validation."
+        )
+
+    var duration = end_time - start_time
+    if duration == 0:
+        duration = 0.000001
+
+    var msg_sec = Float64(iterations) / duration
+    var latency_us = (duration / Float64(iterations)) * 1_000_000
+
+    var ms_str = String(Int(msg_sec))
+    var lat_str = fmt_float(latency_us)
+
+    var padded_name = name
+    while len(padded_name) < 30:
+        padded_name += " "
+
+    return "| " + padded_name + " | " + ms_str + " msg/s | " + lat_str + " μs |"
 
 
 fn main() raises:
-    print("=" * 70)
-    print("MOJOFIX COMPREHENSIVE PERFORMANCE BENCHMARK")
-    print("=" * 70)
-    print("\nTarget: C/C++ Level Performance")
-    print("  • Message creation: ≤ 1 μs")
-    print("  • Message parsing: ≤ 1.5 μs")
-    print("  • Checksum: ≤ 0.5 μs")
-    print("  • Throughput: ≥ 500K msg/s")
+    print("Initializing Benchmark Suite...")
+    var time_module = Python.import_module("time")
 
-    var iterations = 100000
-    print("\nRunning", iterations, "iterations per benchmark...")
+    # Generate valid messages
+    var msg_short = generate_short()
+    var msg_medium = generate_medium()
+    var msg_long = generate_long()
 
-    # Benchmark 1: Message Creation
-    print("\n" + "=" * 70)
-    print("1. MESSAGE CREATION")
-    print("=" * 70)
+    print("Messages generated.")
+    print("Short len: " + String(len(msg_short)))
+    print("Medium len: " + String(len(msg_medium)))
+    print("Long len: " + String(len(msg_long)))
 
-    for i in range(iterations):
-        var msg = FixMessage()
-        msg.append_pair(8, "FIX.4.2")
-        msg.append_pair(35, "D")
-        msg.append_pair(55, "AAPL")
-        msg.append_pair(54, "1")
-        msg.append_pair(38, "100")
-        msg.append_pair(44, "150.50")
-        _ = msg.encode()
+    # ---------------------------------------------------------
+    # Run Benchmarks
+    # ---------------------------------------------------------
 
-    print("✓ Completed", iterations, "message creations")
-    print("  Target: ≤ 1 μs per message")
+    print("\n" + "=" * 65)
+    print("COMPREHENSIVE MOJOFIX BENCHMARK")
+    print("=" * 65 + "\n")
 
-    # Benchmark 2: Message Parsing (Regular)
-    print("\n" + "=" * 70)
-    print("2. MESSAGE PARSING (Regular Parser)")
-    print("=" * 70)
+    var results = List[String]()
 
-    var test_msg = FixMessage()
-    test_msg.append_pair(8, "FIX.4.2")
-    test_msg.append_pair(35, "D")
-    test_msg.append_pair(55, "MSFT")
-    var encoded = test_msg.encode()
+    # Short (reduce iterations for Safe parser if unsafe is invalid, but here we assume safe)
+    results.append(
+        run_benchmark(
+            "Safe Parser (Short 60B)", msg_short, 200_000, time_module, False
+        )
+    )
+    results.append(
+        run_benchmark(
+            "HFT Parser  (Short 60B)", msg_short, 200_000, time_module, True
+        )
+    )
 
-    var parser = FixParser()
-    for i in range(iterations):
-        parser.append_buffer(encoded)
-        var parsed = parser.get_message()
+    # Medium
+    results.append(
+        run_benchmark(
+            "Safe Parser (Medium 310B)", msg_medium, 100_000, time_module, False
+        )
+    )
+    results.append(
+        run_benchmark(
+            "HFT Parser  (Medium 310B)", msg_medium, 100_000, time_module, True
+        )
+    )
 
-    print("✓ Completed", iterations, "parses")
-    print("  Target: ≤ 1.5 μs per message")
+    # Long
+    results.append(
+        run_benchmark(
+            "Safe Parser (Long 1.6KB)", msg_long, 20_000, time_module, False
+        )
+    )
+    results.append(
+        run_benchmark(
+            "HFT Parser  (Long 1.6KB)", msg_long, 20_000, time_module, True
+        )
+    )
 
-    # Benchmark 3: Zero-Copy Parsing
-    print("\n" + "=" * 70)
-    print("3. ZERO-COPY PARSING")
-    print("=" * 70)
+    # ---------------------------------------------------------
+    # Print Table
+    # ---------------------------------------------------------
+    print("\n" + "=" * 65)
+    print("FINAL RESULTS")
+    print("=" * 65)
+    print("| Benchmark                      | Throughput    | Latency   |")
+    print("| :----------------------------- | :------------ | :-------- |")
 
-    for i in range(iterations):
-        var zc_msg = parse_zero_copy(encoded)
-        _ = zc_msg.get(55)
+    for i in range(len(results)):
+        print(results[i])
 
-    print("✓ Completed", iterations, "zero-copy parses")
-    print("  Expected: 2-3x fewer allocations vs regular")
-
-    # Benchmark 4: Checksum (Scalar vs SIMD)
-    print("\n" + "=" * 70)
-    print("4. CHECKSUM CALCULATION")
-    print("=" * 70)
-
-    var test_data = "8=FIX.4.2" + chr(1) + "35=D" + chr(1) + "55=AAPL"
-
-    print("  Scalar implementation...")
-    for i in range(iterations):
-        _ = calculate_checksum_scalar(test_data)
-    print("  ✓ Scalar complete")
-
-    print("  SIMD implementation...")
-    for i in range(iterations):
-        _ = calculate_checksum_simd(test_data)
-    print("  ✓ SIMD complete")
-    print("  Expected: 4-8x faster than scalar")
-    print("  Target: ≤ 0.5 μs per checksum")
-
-    # Benchmark 5: Timestamp Formatting
-    print("\n" + "=" * 70)
-    print("5. TIMESTAMP FORMATTING (Native Mojo)")
-    print("=" * 70)
-
-    var timestamp: Float64 = 1705318245.123
-    for i in range(iterations):
-        _ = format_utc_timestamp(timestamp, 3)
-
-    print("✓ Completed", iterations, "timestamp formats")
-    print("  Achievement: 25x faster than Python datetime")
-
-    # Benchmark 6: Buffer Pooling
-    print("\n" + "=" * 70)
-    print("6. BUFFER POOLING")
-    print("=" * 70)
-
-    var pool = BufferPool(pool_size=16)
-    for i in range(iterations):
-        var idx = pool.acquire()
-        if idx >= 0:
-            pool.set_buffer(idx, "test")
-            _ = pool.get_buffer(idx)
-            pool.release(idx)
-
-    print("✓ Completed", iterations, "pool operations")
-    print("  Achievement: 50-90% fewer allocations")
-
-    # Summary
-    print("\n" + "=" * 70)
-    print("PERFORMANCE SUMMARY")
-    print("=" * 70)
-    print("\n✅ All benchmarks completed successfully!")
-    print("\nOptimizations Achieved:")
-    print("  • Native timestamps: 25x faster")
-    print("  • SIMD checksum: 4-8x faster")
-    print("  • Zero-copy parsing: 2-3x fewer allocations")
-    print("  • Buffer pooling: 50-90% fewer allocations")
-    print("\nEstimated Throughput: 500K-1M messages/second")
-    print("\nStatus: C/C++ Level Performance ✅")
-    print("=" * 70)
+    print("\nDetails:")
+    print("- Short:  FIX 4.2 Heartbeat")
+    print("- Medium: FIX 4.4 ExecutionReport")
+    print("- Long:   FIX 5.0 MarketDataSnapshot (Repeating Groups)")
