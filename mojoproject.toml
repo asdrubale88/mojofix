@@ -1,0 +1,7 @@
+[project]
+name = "mojofix"
+version = "0.1.0"
+description = "High-performance FIX protocol library for Mojo"
+
+[package.mojofix]
+path = "src/mojofix"
