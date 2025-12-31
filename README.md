@@ -92,12 +92,12 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 ### Latency Comparison
 
-| Operation | simplefix | mojofix Safe | mojofix HFT |
-|-----------|-----------|--------------|-------------|
-| Parse short msg | ~10.0 μs | ~1.62 μs | **~0.17 μs** |
-| Parse medium msg | ~15.0 μs | ~3.88 μs | **~0.45 μs** |
-| Build short msg | ~12.0 μs | ~2.50 μs | **~0.66 μs** |
-| Build medium msg | ~14.1 μs | ~2.50 μs | **~0.71 μs** |
+| Operation | simplefix | QuickFIX (C++) | mojofix Safe | mojofix HFT |
+|-----------|-----------|----------------|--------------|-------------|
+| Parse short msg | ~10.0 μs | ~0.67 μs | ~1.62 μs | **~0.17 μs** |
+| Parse medium msg | ~15.0 μs | ~1.00 μs | ~3.88 μs | **~0.45 μs** |
+| Build short msg | ~12.0 μs | ~1.25 μs | ~2.50 μs | **~0.66 μs** |
+| Build medium msg | ~14.1 μs | ~1.54 μs | ~2.50 μs | **~0.71 μs** |
 
 **Key Takeaways:**
 - 🚀 **HFT Parser**: 9x faster than safe parser, 50-60x faster than Python
