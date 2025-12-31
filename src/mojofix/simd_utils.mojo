@@ -99,3 +99,49 @@ fn calculate_checksum_medium[](data: String) -> Int:
 fn calculate_checksum_large[](data: String) -> Int:
     """Optimized for large messages (> 500 bytes)."""
     return 0
+
+
+fn calculate_checksum_ptr(ptr: UnsafePointer[UInt8], length: Int) -> Int:
+    """Calculate FIX checksum from pointer (SIMD optimized).
+
+    :param ptr: Pointer to data bytes
+    :param length: Number of bytes
+    :return: Checksum value (0-255)
+    """
+    if length == 0:
+        return 0
+
+    var i = 0
+
+    # Main SIMD loop - process 32 bytes at a time
+    # We accumulate into uint16 to avoid overflow before reduction
+    # 32 * 255 = 8160, so we can accumulate ~8 chunks safely in uint16
+    # But for safety and simplicity given FIX message sizes, we'll use a wider accumulator if needed
+    # However, since we just need sum % 256, we can let it overflow in a predictable way
+    # if we were just doing uint8 addition, but we need the sum of values.
+    # Actually, worst case message is huge. Int accumulator is best for total sum.
+    # Let's use scalar accumulator for results of SIMD steps to be safe and simple.
+
+    var total_sum: Int = 0
+
+    # Vector width
+    comptime width = 32
+
+    while i + width <= length:
+        # Load 32 bytes
+        var chunk = ptr.load[width=width](i)
+
+        # Cast to uint16 to prevent overflow when reducing this chunk
+        var chunk_u16 = chunk.cast[DType.uint16]()
+
+        # Reduce add this chunk
+        var chunk_sum = chunk_u16.reduce_add()
+
+        total_sum += Int(chunk_sum)
+        i += width
+
+    # Handle remaining bytes
+    for j in range(i, length):
+        total_sum += Int(ptr[j])
+
+    return total_sum % 256

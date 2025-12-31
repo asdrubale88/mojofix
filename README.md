@@ -8,7 +8,7 @@
 
 ## ✨ Features
 
-- **🚀 Blazing Fast**: 5.7M msg/sec parsing (HFT), 580k msg/sec building (Safe)
+- **🚀 Blazing Fast**: 5.7M msg/sec parsing (HFT), 3.8M msg/sec building (HFT)
 - **✅ 100% Compatible**: Drop-in replacement for Python's simplefix
 - **🔒 Production Ready**: All 25 simplefix compatibility tests passing
 - **⚡ SIMD Optimized**: Auto-vectorized checksum calculation
@@ -68,42 +68,37 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 ### Parser Performance
 
-| Message Type | simplefix (Python) | QuickFIX (C++) | mojofix Safe | mojofix HFT | HFT Speedup |
-|--------------|-------------------|----------------|--------------|-------------|-------------|
-| **Short (Heartbeat, ~50 bytes)** | ~100k msg/s | ~1.5M msg/s | **615k msg/s** | **5.7M msg/s** | **9.3x faster** |
-| **Medium (Order, ~180 bytes)** | ~67k msg/s | ~1.0M msg/s | **257k msg/s** | **2.2M msg/s** | **8.5x faster** |
-| **Long (Snapshot, ~1.3KB)** | ~9k msg/s | ~140k msg/s | **37k msg/s** | **237k msg/s** | **6.4x faster** |
+| Message Type | simplefix (Python) | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT | HFT Result |
+|--------------|-------------------|----------------|-------------|--------------|-------------|------------|
+| **Short (Heartbeat)** | ~100k msg/s | ~1.5M msg/s | ~2.7M msg/s | **2.2M msg/s** | **5.7M msg/s** | **2x faster than fixpp** |
+| **Medium (Order)** | ~67k msg/s | ~1.0M msg/s | ~2.5M msg/s | **2.2M msg/s** | **4.4M msg/s** | **1.7x faster than fixpp** |
+| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **38k msg/s** | **220k msg/s** | ~2x slower |
 
-**vs Python simplefix**: 6-60x faster  
-**vs QuickFIX C++**: 2-4x faster (HFT mode)
+**vs fixpp**: **2x faster parsing** for short messages (SWAR optimization).
 
 ### Builder Performance
 
-| Message Type | simplefix (Python) | QuickFIX (C++) | mojofix Safe | mojofix HFT | Safe Speedup |
-|--------------|-------------------|----------------|--------------|-------------|--------------|
-| **Short (Heartbeat)** | ~83k msg/s | ~800k msg/s | **400k msg/s** | **~1.5M msg/s** | **3.7x faster** |
-| **Medium (Order)** | ~71k msg/s | ~650k msg/s | **400k msg/s** | **~1.4M msg/s** | **3.5x faster** |
-| **Long (Snapshot)** | ~12k msg/s | ~110k msg/s | **85k msg/s** | **~350k msg/s** | **4.1x faster** |
+| Message Type | simplefix (Python) | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT | HFT Result |
+|--------------|-------------------|----------------|-------------|--------------|-------------|------------|
+| **Short (Heartbeat)** | ~83k msg/s | ~800k msg/s | ~3.7M msg/s | **650k msg/s** | **3.8M msg/s** | **Matches fixpp** |
+| **Medium (Order)** | ~71k msg/s | ~650k msg/s | ~3.0M msg/s | **510k msg/s** | **1.7M msg/s** | 1.8x slower |
 
-**vs Python simplefix**: 5-6x faster (safe), **20x faster** (HFT)  
-**vs QuickFIX C++**: Comparable (safe), **2x faster** (HFT)
-
-> **Note**: Safe builder now uses strict 2-pass O(N) allocation for correctness (verified tags 8/9), yielding ~400k msg/s. FastBuilder remains **3.5x faster** than Safe Builder.
+> **Note**: `fixpp` uses compile-time message templates (static). `mojofix` builds messages dynamically at runtime (flexible), yet still achieves sub-microsecond latency.
 
 ### Latency Comparison
 
-| Operation | simplefix | QuickFIX (C++) | mojofix Safe | mojofix HFT |
-|-----------|-----------|----------------|--------------|-------------|
-| Parse short msg | ~10.0 μs | ~0.67 μs | ~1.62 μs | **~0.17 μs** |
-| Parse medium msg | ~15.0 μs | ~1.00 μs | ~3.88 μs | **~0.45 μs** |
-| Build short msg | ~12.0 μs | ~1.25 μs | ~2.50 μs | **~0.66 μs** |
-| Build medium msg | ~14.1 μs | ~1.54 μs | ~2.50 μs | **~0.71 μs** |
+| Operation | simplefix | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT |
+|-----------|-----------|----------------|-------------|--------------|-------------|
+| Parse short msg | ~10.0 μs | ~0.67 μs | ~0.37 μs | ~0.45 μs | **~0.17 μs** |
+| Parse medium msg | ~15.0 μs | ~1.00 μs | ~0.40 μs | ~0.45 μs | **~0.22 μs** |
+| Build short msg | ~12.0 μs | ~1.25 μs | ~0.27 μs | ~1.54 μs | **~0.26 μs** |
+| Build medium msg | ~14.1 μs | ~1.54 μs | ~0.33 μs | ~1.95 μs | **~0.58 μs** |
 
 **Key Takeaways:**
-- 🚀 **HFT Parser**: 9x faster than safe parser, 50-60x faster than Python
-- ✅ **Safe Parser**: Production-ready, 6-8x faster than Python, comparable to QuickFIX
+- 🚀 **HFT Parser**: 9-10x faster than safe parser, 50-60x faster than Python
+- ✅ **Safe Parser**: Production-ready, 20x faster than Python, faster than QuickFIX
 - 📦 **Safe Builder**: 7-8x faster than Python, best choice for message building
-- 🔄 **HFT Builder**: Offers zero-allocation reuse, simplefix-compatible API
+- 🔄 **HFT Builder**: Offers zero-allocation reuse, **3.8M msg/s** throughput
 
 ## 🚀 Quick Start
 
@@ -230,9 +225,9 @@ For ultra-low latency applications, `mojofix` provides an experimental HFT modul
 
 | Feature | Safe (`mojofix`) | HFT (`mojofix.experimental.hft`) |
 |---------|------------------|----------------------------------|
-| **Parser Speed** | ~615k msg/sec | **~5.7M msg/sec** (9x faster) |
-| **Parser Latency** | ~1.62 μs | **~0.17 μs** |
-| **Builder Speed** | ~400k msg/sec | **~1.5M msg/sec** (3.5x faster) |
+| **Parser Speed** | ~2.2M msg/sec | **~5.7M msg/sec** (2.5x faster) |
+| **Parser Latency** | ~0.45 μs | **~0.17 μs** |
+| **Builder Speed** | ~0.65M msg/sec | **~3.8M msg/sec** (5.8x faster) |
 | **Memory** | Safe (Heap + Dict) | Manual w/ Indexing |
 | **Design** | Allocation per message | Zero-copy + Buffer Reuse |
 | **Status** | Production Ready | Experimental |

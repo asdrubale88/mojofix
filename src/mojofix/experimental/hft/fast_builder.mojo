@@ -29,8 +29,13 @@ struct FastBuilder(Movable):
 
     var buffer: List[UInt8]
     var position: Int
-    var begin_string: String  # Store BeginString (tag 8)
-    var msg_type: String  # Store MsgType (tag 35)
+    var start_pos: Int  # Start of body data (after headroom)
+    var begin_string: String
+    var msg_type: String
+
+    # Reserve space for header (8=...|9=...)
+    # 128 bytes is plenty for header + msg type
+    comptime HEADROOM = 128
 
     fn __init__(out self, capacity: Int = 4096):
         """Initialize builder with pre-allocated buffer.
@@ -38,11 +43,13 @@ struct FastBuilder(Movable):
         Args:
             capacity: Initial buffer capacity in bytes (default 4KB).
         """
-        self.buffer = List[UInt8](capacity=capacity)
-        # Pre-fill with zeros to enable random access and set valid size
-        for _ in range(capacity):
+        self.buffer = List[UInt8](capacity=capacity + Self.HEADROOM)
+        # Pre-fill with zeros
+        for _ in range(capacity + Self.HEADROOM):
             self.buffer.append(0)
-        self.position = 0
+
+        self.start_pos = Self.HEADROOM
+        self.position = Self.HEADROOM
         self.begin_string = "FIX.4.2"
         self.msg_type = ""
 
@@ -51,7 +58,7 @@ struct FastBuilder(Movable):
 
         Clears position but keeps allocated buffer.
         """
-        self.position = 0
+        self.position = Self.HEADROOM
         self.msg_type = ""
 
     fn _ensure_capacity(mut self, needed: Int):
@@ -79,7 +86,7 @@ struct FastBuilder(Movable):
             byte: Byte to write.
         """
         self._ensure_capacity(1)
-        self.buffer[self.position] = byte
+        self.buffer.unsafe_ptr()[self.position] = byte
         self.position += 1
 
     fn _write_bytes(mut self, data: String):
@@ -130,14 +137,16 @@ struct FastBuilder(Movable):
 
         # Write negative sign
         if negative:
-            self.buffer[self.position] = ord("-")
+            self.buffer.unsafe_ptr()[self.position] = ord("-")
             self.position += 1
 
         # Write digits in reverse
         var pos = self.position + digit_count - 1
         temp = num
+        var ptr = self.buffer.unsafe_ptr()
+
         while temp > 0:
-            self.buffer[pos] = ZERO + UInt8(temp % 10)
+            ptr[pos] = ZERO + UInt8(temp % 10)
             temp //= 10
             pos -= 1
 
@@ -167,18 +176,21 @@ struct FastBuilder(Movable):
 
         # Write using lookup
         var v = value
+        var ptr = self.buffer.unsafe_ptr()
+        var lookup_ptr = TWO_DIGITS_LOOKUP.unsafe_ptr()
+
         while v >= 10:
             var rem = v % 100
             v //= 100
             var idx = rem * 2
-            # Use unchecked stores if we trust pos, but here we use list set
-            # for safety while verifying. Actually, let's use the buffer directly
-            self.buffer[pos - 1] = ord(TWO_DIGITS_LOOKUP[idx + 1])
-            self.buffer[pos - 2] = ord(TWO_DIGITS_LOOKUP[idx])
+
+            # Use unsafe pointers for maximum speed
+            ptr[pos - 1] = lookup_ptr[idx + 1]
+            ptr[pos - 2] = lookup_ptr[idx]
             pos -= 2
 
         if v > 0:
-            self.buffer[pos - 1] = ZERO + UInt8(v)
+            ptr[pos - 1] = ZERO + UInt8(v)
 
     fn append_pair(mut self, tag: Int, value: String):
         """Append tag=value pair to message.
@@ -348,180 +360,126 @@ struct FastBuilder(Movable):
     fn encode(mut self) -> String:
         """Finalize and encode message with header and checksum.
 
-        Returns:
-            Complete FIX message string.
+        Uses zero-copy construction from internal buffer.
         """
-        # Create output buffer for final message
-        var output = List[UInt8](capacity=self.position + 256)
-        var out_pos = 0
+        # 1. Calculate body length
+        # Current position is end of body fields
+        # Start of body fields is HEADROOM
+        var body_len = self.position - self.start_pos
 
-        # Helper to write string to output using memcpy
-        @always_inline
-        fn write_str(mut output: List[UInt8], mut pos: Int, s: String) -> Int:
-            var s_bytes = s.as_bytes()
-            var s_len = len(s_bytes)
-
-            # Ensure capacity
-            while pos + s_len > len(output):
-                output.append(0)
-
-            # Use memcpy for bulk copy (vectorized)
-            var src_ptr = s_bytes.unsafe_ptr()
-            var dst_ptr = output.unsafe_ptr().offset(pos)
-            memcpy(dest=dst_ptr, src=src_ptr, count=s_len)
-
-            return pos + s_len
-
-        # Helper to write int to output
-        fn write_int_to_output(
-            mut output: List[UInt8], mut pos: Int, value: Int
-        ) -> Int:
-            if value == 0:
-                if pos >= len(output):
-                    output.append(ZERO)
-                else:
-                    output[pos] = ZERO
-                return pos + 1
-
-            var num = value
-            var negative = False
-            if num < 0:
-                negative = True
-                num = -num
-
-            # Count digits
-            var temp = num
-            var digit_count = 0
-            while temp > 0:
-                digit_count += 1
-                temp //= 10
-
-            var total_len = digit_count
-            if negative:
-                total_len += 1
-
-            # Ensure capacity
-            while pos + total_len > len(output):
-                output.append(0)
-
-            # Write negative sign
-            if negative:
-                output[pos] = ord("-")
-                pos += 1
-
-            # Write digits in reverse
-            var digit_pos = pos + digit_count - 1
-            temp = num
-            while temp > 0:
-                output[digit_pos] = ZERO + UInt8(temp % 10)
-                temp //= 10
-                digit_pos -= 1
-
-            return pos + digit_count
-
-        # 1. Calculate body length (needed for header)
-        var body_len = self.position
+        # Add MsgType length: "35=" + value + SOH
         if self.msg_type != "":
-            body_len += 4 + len(self.msg_type)  # "35=" + value + SOH
+            body_len += 4 + len(self.msg_type)
 
-        # 2. Write header: 8=FIX.4.2\x01
-        out_pos = write_str(output, out_pos, "8=")
-        out_pos = write_str(output, out_pos, self.begin_string)
-        if out_pos >= len(output):
-            output.append(SOH)
-        else:
-            output[out_pos] = SOH
-        out_pos += 1
+        # 2. Build header BACKWARDS from start_pos
+        # We need to write: 8=FIX.4.2\x019=<len>\x01 (and optionally 35=...)
+        # Actually, standard FIX header order is 8, 9, 35.
+        # But we stored 35 separately.
+        # Let's write the 35 part at the HEADROOM if we can, OR
+        # better: write 8 and 9 into the headroom, but 35 needs to be AFTER 9.
+        # And the body is already at HEADROOM.
 
-        # 3. Write BodyLength: 9=<len>\x01
-        out_pos = write_str(output, out_pos, "9=")
-        out_pos = write_int_to_output(output, out_pos, body_len)
-        if out_pos >= len(output):
-            output.append(SOH)
-        else:
-            output[out_pos] = SOH
-        out_pos += 1
+        # Wait, if we just appended fields to buffer starting at HEADROOM,
+        # then buffer[HEADROOM:] contains the body tags.
+        # But 35 is a header tag, so it should be before body.
+        # Ideally, we should have written 35 into the buffer first if it was regular.
+        # But we treat it special.
 
-        # 4. Write body directly (no intermediate buffer!)
-        # Add MsgType if set
+        # OPTIMIZED PLAN:
+        # We need [Header 8, 9, 35] + [Body] + [Trailer 10]
+        # Body is at [HEADROOM : position]
+        # We can write 8, 9, 35 into [HEADROOM-k : HEADROOM]
+        # Then verify checksum on the whole range
+        # Then append 10.
+
+        var ptr = self.buffer.unsafe_ptr()
+        var head_pos = self.start_pos
+
+        # Write MsgType (35) first (backwards or forwards? backwards is hard for var len strings)
+        # Actually, let's just write 35, 9, 8 backwards.
+
+        # Write 35=...SOH
         if self.msg_type != "":
-            out_pos = write_str(output, out_pos, "35=")
-            out_pos = write_str(output, out_pos, self.msg_type)
-            if out_pos >= len(output):
-                output.append(SOH)
-            else:
-                output[out_pos] = SOH
-            out_pos += 1
+            head_pos -= 1
+            ptr[head_pos] = SOH
 
-        # Add rest of body fields directly from buffer using memcpy
-        if self.position > 0:
-            # Ensure capacity
-            while out_pos + self.position > len(output):
-                output.append(0)
+            var mt_len = len(self.msg_type)
+            var mt_ptr = self.msg_type.unsafe_ptr()
+            head_pos -= mt_len
+            memcpy(dest=ptr.offset(head_pos), src=mt_ptr, count=mt_len)
 
-            # Bulk copy using memcpy (vectorized)
-            var src_ptr = self.buffer.unsafe_ptr()
-            var dst_ptr = output.unsafe_ptr().offset(out_pos)
-            memcpy(dest=dst_ptr, src=src_ptr, count=self.position)
-            out_pos += self.position
+            head_pos -= 3
+            memcpy(dest=ptr.offset(head_pos), src="35=".unsafe_ptr(), count=3)
 
-        # 5. Calculate checksum using SIMD (4-8x faster!)
-        # First convert buffer to string for SIMD checksum
-        if out_pos >= len(output):
-            output.append(0)
+        # Write 9=...SOH
+        head_pos -= 1
+        ptr[head_pos] = SOH
+
+        var bl_temp = body_len
+        if bl_temp == 0:
+            head_pos -= 1
+            ptr[head_pos] = ZERO
         else:
-            output[out_pos] = 0
-        var temp_ptr = output.unsafe_ptr()
-        var temp_str = String(unsafe_from_utf8_ptr=temp_ptr)
+            while bl_temp > 0:
+                head_pos -= 1
+                ptr[head_pos] = ZERO + UInt8(bl_temp % 10)
+                bl_temp //= 10
 
-        from mojofix.simd_utils import checksum_hot_path
+        head_pos -= 2
+        memcpy(dest=ptr.offset(head_pos), src="9=".unsafe_ptr(), count=2)
 
-        var checksum = checksum_hot_path(temp_str)
+        # Write 8=...SOH
+        head_pos -= 1
+        ptr[head_pos] = SOH
 
-        # 6. Write checksum: 10=<checksum>\x01
-        out_pos = write_str(output, out_pos, "10=")
+        var bs_len = len(self.begin_string)
+        var bs_ptr = self.begin_string.unsafe_ptr()
+        head_pos -= bs_len
+        memcpy(dest=ptr.offset(head_pos), src=bs_ptr, count=bs_len)
 
-        # Format checksum as 3-digit string
+        head_pos -= 2
+        memcpy(dest=ptr.offset(head_pos), src="8=".unsafe_ptr(), count=2)
+
+        # Now head_pos points to the start of the message
+        # Message is from head_pos to position
+
+        # 3. Calculate checksum
+        var msg_len = self.position - head_pos
+        from mojofix.simd_utils import calculate_checksum_ptr
+
+        var checksum = calculate_checksum_ptr(ptr.offset(head_pos), msg_len)
+
+        # 4. Append Checksum (10=...SOH)
+        # We append this at the END (at self.position)
+        var tail_len = 7  # 10=XXX\x01
+        self._ensure_capacity(tail_len + 1)  # +1 for null terminator if needed
+
+        ptr[self.position] = ord("1")
+        ptr[self.position + 1] = ord("0")
+        ptr[self.position + 2] = EQUALS
+
         var c_hundreds = checksum // 100
         var c_tens = (checksum % 100) // 10
         var c_ones = checksum % 10
 
-        if out_pos >= len(output):
-            output.append(ZERO + UInt8(c_hundreds))
-        else:
-            output[out_pos] = ZERO + UInt8(c_hundreds)
-        out_pos += 1
+        ptr[self.position + 3] = ZERO + UInt8(c_hundreds)
+        ptr[self.position + 4] = ZERO + UInt8(c_tens)
+        ptr[self.position + 5] = ZERO + UInt8(c_ones)
+        ptr[self.position + 6] = SOH
 
-        if out_pos >= len(output):
-            output.append(ZERO + UInt8(c_tens))
-        else:
-            output[out_pos] = ZERO + UInt8(c_tens)
-        out_pos += 1
+        var total_len = msg_len + 7
 
-        if out_pos >= len(output):
-            output.append(ZERO + UInt8(c_ones))
-        else:
-            output[out_pos] = ZERO + UInt8(c_ones)
-        out_pos += 1
+        # Null terminate for string creation (not strictly needed for from_utf8_ptr but good safely)
+        ptr[head_pos + total_len] = 0
 
-        if out_pos >= len(output):
-            output.append(SOH)
-        else:
-            output[out_pos] = SOH
-        out_pos += 1
+        # 5. Create String view
+        # We can create a string from the pointer.
+        # CAVEAT: This creates a COPY of the data into the new String.
+        # But it's only ONE copy (buffer -> new String), instead of TWO (buffer -> output -> new String).
+        # And we assume the user takes ownership of the result.
 
-        # Convert buffer to string using unsafe_from_utf8_ptr
-        # This is MUCH faster than character-by-character building!
-        # Eliminates 200+ String allocations per message
-        if out_pos >= len(output):
-            output.append(0)  # Null terminator
-        else:
-            output[out_pos] = 0
-
-        var ptr = output.unsafe_ptr()
-        var result = String(unsafe_from_utf8_ptr=ptr)
-
-        return result
+        var result_ptr = ptr.offset(head_pos)
+        return String(unsafe_from_utf8_ptr=result_ptr)
 
     fn build(mut self) -> String:
         """Build and return final message (alias for encode).
