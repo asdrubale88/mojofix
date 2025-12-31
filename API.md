@@ -297,15 +297,94 @@ if parser.acquire_buffer():
     parser.release_buffer()
 ```
 
+
+---
+
+## Experimental HFT Module
+
+### FastParser
+
+High-performance zero-copy parser (9x faster than safe parser).
+
+```mojo
+from mojofix.experimental.hft import FastParser, FastMessage
+
+var parser = FastParser()
+var msg = FastMessage("")
+parser.parse_into(raw_data, msg)  # Zero-copy parsing
+var symbol = msg.get(55)
+```
+
+#### Methods
+
+- `parse(data: String) -> FastMessage` - Parse into new message
+- `parse_into(data: String, msg: FastMessage)` - Parse into existing message (zero-alloc)
+
+### FastMessage
+
+Zero-copy message representation using field indices.
+
+#### Methods
+
+- `get(tag: Int) -> String` - Get field value
+- `get_nth(tag: Int, nth: Int) -> String` - Get nth occurrence
+- `has_field(tag: Int) -> Bool` - Check if field exists
+- `field_count() -> Int` - Get field count
+- `clear()` - Clear all fields for reuse
+
+### FastBuilder
+
+Fast message builder with simplefix-compatible API and buffer reuse.
+
+```mojo
+from mojofix.experimental.hft import FastBuilder
+
+var builder = FastBuilder()
+builder.append_pair(8, "FIX.4.2")
+builder.append_pair(35, "D")
+builder.append_pair(55, "AAPL")
+builder.append_pair(54, 1)       # Auto-converts Int
+builder.append_pair(44, 150.50)  # Auto-converts Float
+builder.append_pair(141, True)   # Auto-converts Bool to Y/N
+
+var msg = builder.encode()
+
+# Reuse for next message
+builder.reset()
+```
+
+#### Methods
+
+**Field Appending:**
+- `append_pair(tag: Int, value: String)` - Append string field
+- `append_pair(tag: Int, value: Int)` - Append integer field
+- `append_pair(tag: Int, value: Float64)` - Append float field
+- `append_pair(tag: Int, value: Bool)` - Append boolean field (Y/N)
+
+**Raw Data:**
+- `append_data(len_tag: Int, val_tag: Int, data: String)` - Append raw data with length
+
+**Timestamps:**
+- `append_utc_timestamp(tag: Int, timestamp: Float64, precision: Int = 3)` - UTC timestamp
+- `append_time(tag: Int, timestamp: Float64, precision: Int = 3)` - Alias for append_utc_timestamp
+
+**Message Operations:**
+- `encode() -> String` - Finalize and encode message
+- `build() -> String` - Alias for encode()
+- `reset()` - Clear buffer for reuse (zero-allocation)
+
+> **Performance Note**: FastBuilder currently runs at ~66% of safe builder speed due to string handling overhead. Use for API compatibility and buffer reuse. Performance will improve with future Mojo enhancements.
+
 ---
 
 ## Performance Tips
 
-1. **Use zero-copy parsing** for maximum performance
-2. **Enable buffer pooling** for high-frequency scenarios
-3. **Batch operations** when adding multiple fields
-4. **Reuse messages** with `reset()` instead of creating new ones
-5. **Pre-allocate** when possible
+1. **Use HFT FastParser** for maximum parsing performance (9x faster)
+2. **Use FastBuilder.reset()** for zero-allocation message building in hot loops
+3. **Enable buffer pooling** for high-frequency scenarios
+4. **Batch operations** when adding multiple fields
+5. **Reuse messages** with `reset()` instead of creating new ones
+6. **Pre-allocate** when possible
 
 ---
 

@@ -113,3 +113,13 @@ struct FastMessage(Movable):
     fn clear(mut self):
         """Clear all fields (for reuse)."""
         self.fields.clear()
+
+    fn count(self) -> Int:
+        """Get field count (simplefix-compatible alias).
+
+        Returns the number of fields in the message.
+        Alias for field_count() to match simplefix API.
+
+        :return: Number of fields
+        """
+        return self.field_count()

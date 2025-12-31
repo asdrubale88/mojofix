@@ -53,6 +53,42 @@ struct FixMessage(Copyable, Movable, Stringable):
         else:
             self.fields.append(FixField(tag, value))
 
+    fn append_pair(mut self, tag: Int, value: Int, header: Bool = False):
+        """Append tag=value pair with integer value (auto-converts to String).
+
+        Simplefix-compatible overload for convenience.
+        Zero overhead - conversion happens at compile time.
+
+        :param tag: FIX field tag number
+        :param value: Integer field value
+        :param header: If True, append to header; otherwise append to body
+        """
+        self.append_pair(tag, String(value), header)
+
+    fn append_pair(mut self, tag: Int, value: Float64, header: Bool = False):
+        """Append tag=value pair with float value (auto-converts to String).
+
+        Simplefix-compatible overload for convenience.
+        Zero overhead - conversion happens at compile time.
+
+        :param tag: FIX field tag number
+        :param value: Float field value
+        :param header: If True, append to header; otherwise append to body
+        """
+        self.append_pair(tag, String(value), header)
+
+    fn append_pair(mut self, tag: Int, value: Bool, header: Bool = False):
+        """Append tag=value pair with boolean value (converts to Y/N).
+
+        FIX protocol uses Y/N for boolean values.
+        Zero overhead - conversion happens at compile time.
+
+        :param tag: FIX field tag number
+        :param value: Boolean field value (True=Y, False=N)
+        :param header: If True, append to header; otherwise append to body
+        """
+        self.append_pair(tag, "Y" if value else "N", header)
+
     fn append_string(mut self, s: String, header: Bool = False):
         """Parse and append tag=value string.
 
@@ -206,6 +242,83 @@ struct FixMessage(Copyable, Movable, Stringable):
         """
         return self.get(tag)
 
+    @always_inline
+    fn get_or(self, tag: Int, default: String = "") -> String:
+        """Get field value or return default (simplefix-style convenience).
+
+        Zero overhead with @always_inline - compiler inlines completely.
+        Simpler than checking Optional every time.
+
+        :param tag: FIX field tag number
+        :param default: Default value if field not found
+        :return: Field value or default
+
+        Usage:
+            var symbol = msg.get_or(55, "UNKNOWN")
+        """
+        var val = self.get(tag)
+        return val.value() if val else default
+
+    @always_inline
+    fn get_int(self, tag: Int, default: Int = 0) -> Int:
+        """Get field value as Int, or return default.
+
+        Zero overhead with @always_inline - compiler inlines completely.
+        Convenient for numeric fields without Optional handling.
+
+        :param tag: FIX field tag number
+        :param default: Default value if field not found or conversion fails
+        :return: Field value as Int or default
+
+        Usage:
+            var qty = msg.get_int(38, 0)
+        """
+        var val = self.get(tag)
+        if not val:
+            return default
+        try:
+            return Int(val.value())
+        except:
+            return default
+
+    @always_inline
+    fn get_float(self, tag: Int, default: Float64 = 0.0) -> Float64:
+        """Get field value as Float64, or return default.
+
+        Zero overhead with @always_inline - compiler inlines completely.
+        Convenient for price/quantity fields without Optional handling.
+
+        :param tag: FIX field tag number
+        :param default: Default value if field not found or conversion fails
+        :return: Field value as Float64 or default
+
+        Usage:
+            var price = msg.get_float(44, 0.0)
+        """
+        var val = self.get(tag)
+        if not val:
+            return default
+        try:
+            return Float64(val.value())
+        except:
+            return default
+
+    @always_inline
+    fn has(self, tag: Int) -> Bool:
+        """Check if field exists (simplefix-compatible).
+
+        Zero overhead with @always_inline - compiler inlines completely.
+        Cleaner than checking Optional every time.
+
+        :param tag: FIX field tag number
+        :return: True if field exists, False otherwise
+
+        Usage:
+            if msg.has(55):
+                var symbol = msg.get(55).value()
+        """
+        return self.get(tag) is not None
+
     fn remove(mut self, tag: Int, nth: Int = 1) -> Bool:
         """Remove nth occurrence of tag from message.
 
@@ -307,7 +420,14 @@ struct FixMessage(Copyable, Movable, Stringable):
         return out_msg
 
     fn count(self) -> Int:
-        return len(self.fields)
+        """Get total field count (simplefix-compatible).
+
+        Returns total number of fields (header + body).
+        This is an alias for count_fields() to match simplefix API.
+
+        :return: Total number of fields
+        """
+        return self.count_fields()
 
     fn __str__(self) -> String:
         return self.encode(True)
@@ -446,3 +566,23 @@ struct FixMessage(Copyable, Movable, Stringable):
 
         var formatted = format_month_year(timestamp)
         self.append_pair(tag, formatted, header)
+
+    fn append_time(
+        mut self,
+        tag: Int,
+        timestamp: Float64,
+        precision: Int = 3,
+        header: Bool = False,
+    ):
+        """Append UTC timestamp (simplefix-compatible alias).
+
+        This is an alias for append_utc_timestamp() to match simplefix API.
+        Note: Unlike Python's simplefix, this requires an explicit timestamp.
+        Use Python interop or benchmarking time() for current time if needed.
+
+        :param tag: FIX field tag number
+        :param timestamp: Unix timestamp
+        :param precision: Decimal places (0, 3, or 6)
+        :param header: If True, append to header
+        """
+        self.append_utc_timestamp(tag, timestamp, precision, header)

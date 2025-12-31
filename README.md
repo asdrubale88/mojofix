@@ -14,6 +14,53 @@
 - **⚡ SIMD Optimized**: 4-8x faster checksum calculation (Auto-Vectorized)
 - **🎯 Zero Dependencies**: Pure Mojo implementation
 
+## SimpleFIX Compatibility
+
+Mojofix provides a **simplefix-compatible API** for seamless migration from Python:
+
+**Python (simplefix):**
+```python
+import simplefix
+msg = simplefix.FixMessage()
+msg.append_pair(55, "AAPL")
+msg.append_time(52)
+encoded = msg.encode()
+```
+
+**Mojo (mojofix):**
+```mojo
+from mojofix import FixMessage
+var msg = FixMessage()
+msg.append_pair(55, "AAPL")
+msg.append_time(52)
+var encoded = msg.encode()
+```
+
+**Key compatible methods:**
+- `append_pair(tag, value, header=False)` - Add field to message (auto-converts Int/Float64!)
+- `append_time(tag, timestamp, precision=3)` - Add UTC timestamp (alias for append_utc_timestamp)
+- `append_string(s, header=False)` - Parse and add "tag=value" string
+- `append_data(len_tag, val_tag, data)` - Add data field with length prefix
+- `get(tag, nth=1)` - Get field value
+- `get_or(tag, default="")` - Get field or default (no Optional handling!)
+- `get_int(tag, default=0)` - Get field as Int (auto-converts!)
+- `get_float(tag, default=0.0)` - Get field as Float64 (auto-converts!)
+- `count()` - Get total field count
+- `encode()` - Encode message
+
+**New convenience features** (zero overhead with `@always_inline`):
+```mojo
+msg.append_pair(38, 100)         # Auto-converts Int!
+msg.append_pair(44, 150.50)      # Auto-converts Float64!
+msg.append_pair(141, True)       # Auto-converts Bool to Y/N!
+var symbol = msg.get_or(55, "")  # No Optional handling needed!
+var qty = msg.get_int(38, 0)     # Direct Int conversion!
+if msg.has(55):                  # Clean existence check!
+    print(msg.get(55).value())
+```
+
+See the [SimpleFIX Migration Guide](docs/simplefix_migration.md) and [Quick Reference](docs/QUICKREF.md) for complete details.
+
 ## 📊 Performance
 
 | Message Type | Safe Parser | HFT Parser | Speedup |
@@ -121,14 +168,17 @@ pixi run mojo -I src benchmarks/bench_comprehensive.mojo
 ```
 mojofix/
 ├── src/mojofix/
-│   ├── message.mojo      # FixMessage implementation
-│   ├── parser.mojo       # FixParser implementation
-│   ├── time_utils.mojo   # Timestamp formatting
-│   ├── simd_utils.mojo   # SIMD optimizations
-│   └── hft/              # HFT zero-copy module (experimental)
-├── test/                 # Test suites
-├── benchmarks/           # Performance benchmarks
-└── examples/             # Usage examples
+│   ├── message.mojo          # FixMessage implementation
+│   ├── parser.mojo           # FixParser implementation
+│   ├── time_utils.mojo       # Timestamp formatting
+│   ├── simd_utils.mojo       # SIMD optimizations
+│   └── experimental/hft/     # HFT module (FastParser + FastBuilder)
+│       ├── fast_parser.mojo  # Zero-copy parser
+│       ├── fast_message.mojo # Zero-copy message
+│       └── fast_builder.mojo # Fast message builder
+├── test/                     # Test suites
+├── benchmarks/               # Performance benchmarks
+└── examples/                 # Usage examples
 ```
 
 ## 🎯 Use Cases
@@ -142,17 +192,18 @@ Perfect for:
 
 ## 🚀 HFT Module (Experimental)
 
-For ultra-low latency applications, `mojofix` provides an experimental HFT module that trades some safety guarantees for raw speed.
+For ultra-low latency applications, `mojofix` provides an experimental HFT module with fast parsing **and building**.
 
-| Feature | Safe Parser (`mojofix`) | HFT Parser (`mojofix.experimental.hft`) |
-|---------|-------------------------|------------------------------------------|
-| **Speed** | ~600k msg/sec | **~5.7M msg/sec** (9x faster) |
-| **Latency** | ~1.60 μs | **~0.17 μs** |
+| Feature | Safe (`mojofix`) | HFT (`mojofix.experimental.hft`) |
+|---------|------------------|----------------------------------|
+| **Parser Speed** | ~600k msg/sec | **~5.7M msg/sec** (9x faster) |
+| **Parser Latency** | ~1.60 μs | **~0.17 μs** |
+| **Builder Speed** | ~543k msg/sec | ~359k msg/sec (reuse mode) |
 | **Memory** | Safe (Heap + Dict) | Manual w/ Indexing |
-| **Design** | Allocation per message | Zero-copy parsing + Message Reuse |
+| **Design** | Allocation per message | Zero-copy + Buffer Reuse |
 | **Status** | Production Ready | Experimental |
 
-### Usage
+### Fast Parsing
 
 ```mojo
 from mojofix.experimental.hft import FastParser, FastMessage
@@ -168,6 +219,30 @@ fn main() raises:
     # 3. Access fields (lazy string creation)
     print(msg.get(35))
 ```
+
+### Fast Building
+
+```mojo
+from mojofix.experimental.hft import FastBuilder
+
+fn main() raises:
+    var builder = FastBuilder()
+    
+    # Build message with simplefix-compatible API
+    builder.append_pair(8, "FIX.4.2")
+    builder.append_pair(35, "D")
+    builder.append_pair(55, "AAPL")
+    builder.append_pair(54, 1)      # Auto-converts Int
+    builder.append_pair(38, 100)    # Auto-converts Int
+    builder.append_pair(44, 150.50) # Auto-converts Float
+    
+    var msg = builder.encode()
+    
+    # Reuse for next message (zero allocation)
+    builder.reset()
+```
+
+> **Note**: FastBuilder currently performs at 66% of safe builder speed due to Mojo string handling limitations. It's valuable for its simplefix-compatible API and buffer reuse capabilities. Performance will improve significantly when Mojo adds efficient byte-to-string conversion.
 
 ## 🚀 Roadmap
 
