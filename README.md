@@ -79,13 +79,14 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 ### Builder Performance
 
-| Message Type | simplefix (Python) | mojofix Safe | mojofix HFT (reuse) | Safe Speedup |
-|--------------|-------------------|--------------|---------------------|--------------|
-| **Short (Heartbeat)** | ~83k msg/s | **580k msg/s** | ~380k msg/s | **7.0x faster** |
-| **Medium (Order)** | ~71k msg/s | **543k msg/s** | ~359k msg/s | **7.6x faster** |
-| **Long (Snapshot)** | ~12k msg/s | **95k msg/s** | ~63k msg/s | **7.9x faster** |
+| Message Type | simplefix (Python) | QuickFIX (C++) | mojofix Safe | mojofix HFT (reuse) | Safe Speedup |
+|--------------|-------------------|----------------|--------------|---------------------|--------------|
+| **Short (Heartbeat)** | ~83k msg/s | ~800k msg/s | **580k msg/s** | ~380k msg/s | **7.0x faster** |
+| **Medium (Order)** | ~71k msg/s | ~650k msg/s | **543k msg/s** | ~359k msg/s | **7.6x faster** |
+| **Long (Snapshot)** | ~12k msg/s | ~110k msg/s | **95k msg/s** | ~63k msg/s | **7.9x faster** |
 
-**vs Python simplefix**: 6-8x faster (safe), 4-5x faster (HFT with reuse)
+**vs Python simplefix**: 6-8x faster (safe), 4-5x faster (HFT with reuse)  
+**vs QuickFIX C++**: Comparable performance (safe builder)
 
 > **Note**: HFT FastBuilder currently runs at ~66% of safe builder speed due to Mojo string handling overhead. Performance will improve significantly with future Mojo enhancements. Use FastBuilder for its simplefix-compatible API and zero-allocation buffer reuse via `reset()`.
 
