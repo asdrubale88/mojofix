@@ -370,14 +370,37 @@ struct FixMessage(Copyable, Movable, Stringable):
         var soh = String(SOH_CHAR)
         if raw:
             var res = String("")
+            # Handle header fields first
+            for i in range(len(self.header_fields)):
+                res += String(self.header_fields[i]) + soh
+            # Then body fields
             for i in range(len(self.fields)):
                 res += String(self.fields[i]) + soh
             return res
 
         var f8: Optional[String] = None
         var f35: Optional[String] = None
-        var other_fields = List[FixField]()
+        var body_len = 0
 
+        # We need to scan both lists to calculate size and identifying specific tags
+        # 2-pass approach: 1. Calculate size & identify tags. 2. Write bytes.
+
+        # Pass 1: Scan header fields
+        for i in range(len(self.header_fields)):
+            var f = self.header_fields[i].copy()
+            if f.tag == 8:
+                f8 = f.value
+            elif f.tag == 9:
+                pass  # Auto-calculated
+            elif f.tag == 10:
+                pass  # Auto-calculated
+            elif f.tag == 35:
+                f35 = f.value
+                body_len += 4 + len(f.value)  # 35=...SOH
+            else:
+                body_len += len(String(f.tag)) + 1 + len(f.value) + 1
+
+        # Pass 1: Scan body fields
         for i in range(len(self.fields)):
             var f = self.fields[i].copy()
             if f.tag == 8:
@@ -388,26 +411,50 @@ struct FixMessage(Copyable, Movable, Stringable):
                 pass
             elif f.tag == 35:
                 f35 = f.value
+                body_len += 4 + len(f.value)
             else:
-                other_fields.append(f.copy())
+                body_len += len(String(f.tag)) + 1 + len(f.value) + 1
 
-        var body_content = String("")
-        if f35:
-            body_content += String("35=") + f35.value() + soh
+        # Estimate header size (8=... + 9=...) roughly 20-30 bytes
+        # Allocate buffer with single allocation
+        var buf = List[UInt8]()
+        buf.reserve(body_len + 50)
 
-        for i in range(len(other_fields)):
-            body_content += String(other_fields[i]) + soh
-
-        var body_len = len(body_content)
-
-        var out_msg = String("")
+        # Pass 2: Write
+        # Write 8
         if f8:
-            out_msg += String("8=") + f8.value() + soh
+            var s = "8=" + f8.value() + soh
+            buf.extend(s.as_bytes())
 
-        out_msg += String("9=") + String(body_len) + soh
-        out_msg += body_content
+        # Write 9
+        var s9 = "9=" + String(body_len) + soh
+        buf.extend(s9.as_bytes())
 
-        # Calculate checksum using SIMD-optimized implementation
+        # Write 35
+        if f35:
+            var s = "35=" + f35.value() + soh
+            buf.extend(s.as_bytes())
+
+        # Write other fields (Header)
+        for i in range(len(self.header_fields)):
+            var f = self.header_fields[i].copy()
+            if f.tag != 8 and f.tag != 9 and f.tag != 10 and f.tag != 35:
+                # Optimized write avoiding String(field)
+                var s = String(f.tag) + "=" + f.value + soh
+                buf.extend(s.as_bytes())
+
+        # Write other fields (Body)
+        for i in range(len(self.fields)):
+            var f = self.fields[i].copy()
+            if f.tag != 8 and f.tag != 9 and f.tag != 10 and f.tag != 35:
+                var s = String(f.tag) + "=" + f.value + soh
+                buf.extend(s.as_bytes())
+
+        # Create string once
+        var out_msg = String(bytes=buf)
+        buf.clear()
+
+        # Checksum
         from mojofix.simd_utils import checksum_hot_path
 
         var csum = checksum_hot_path(out_msg)

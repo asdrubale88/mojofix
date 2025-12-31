@@ -127,9 +127,42 @@ fn main() raises:
     print("Throughput:", reuse_throughput, "msg/sec")
     print("Latency:   ", reuse_latency_us, "μs/msg")
 
+    # Benchmark FAST Builder (Comp Tags)
+    print("\n" + "-" * 70)
+    print("HFT FASTBUILDER (Comp Tags - Zero Alloc + Comptime)")
+    print("-" * 70)
+
+    var comp_builder = FastBuilder()
+    var t0_comp = time_module.time()
+    for _ in range(iterations):
+        comp_builder.reset()
+        # Use compile-time known tags where possible (mostly string/char fields)
+        comp_builder.append_comp_tag[8]("FIX.4.2")
+        comp_builder.append_comp_tag[35]("D")
+        comp_builder.append_comp_tag[49]("SENDER")
+        comp_builder.append_comp_tag[56]("TARGET")
+        comp_builder.append_comp_tag[55]("AAPL")
+        # For numeric values, we currently still use append_pair but could optimize further
+        comp_builder.append_pair(54, 1)
+        comp_builder.append_pair(38, 100)
+        comp_builder.append_pair(44, 150.50)
+        comp_builder.append_comp_tag[40]("2")
+        comp_builder.append_comp_tag[59]("0")
+        _ = comp_builder.encode()
+    var t1_comp = time_module.time()
+    var comp_time = t1_comp - t0_comp
+
+    var comp_throughput = iterations / comp_time
+    var comp_latency_us = (comp_time / iterations) * 1_000_000
+
+    print("Time:      ", comp_time, "seconds")
+    print("Throughput:", comp_throughput, "msg/sec")
+    print("Latency:   ", comp_latency_us, "μs/msg")
+
     # Results Analysis
     var speedup_alloc = safe_time / fast_time
     var speedup_reuse = safe_time / reuse_time
+    var speedup_comp = safe_time / comp_time
 
     print("\n" + "=" * 70)
     print("RESULTS")
@@ -137,8 +170,10 @@ fn main() raises:
     print("Safe Builder Throughput:     ", Int(safe_throughput), "msg/s")
     print("Fast Builder (Alloc):        ", Int(fast_throughput), "msg/s")
     print("Fast Builder (Reuse):        ", Int(reuse_throughput), "msg/s")
+    print("Fast Builder (Comp Tags):    ", Int(comp_throughput), "msg/s")
     print("Speedup (Alloc) vs Safe:     ", speedup_alloc, "x")
     print("Speedup (Reuse) vs Safe:     ", speedup_reuse, "x")
+    print("Speedup (Comp) vs Safe:      ", speedup_comp, "x")
 
     print("\nPERFORMANCE ANALYSIS")
     print("-" * 70)
