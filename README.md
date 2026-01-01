@@ -70,9 +70,9 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 | Message Type | simplefix (Python) | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT | mojofix MD Template | Best Result |
 |--------------|-------------------|----------------|-------------|--------------|-------------|---------------------|-------------|
-| **Short (Heartbeat)** | ~100k msg/s | ~1.5M msg/s | ~2.7M msg/s | **359k msg/s** | **4.0M msg/s** | N/A | **1.5x faster than fixpp** |
-| **Medium (Order)** | ~67k msg/s | ~1.0M msg/s | ~2.5M msg/s | **174k msg/s** | **1.2M msg/s** | N/A | **Competitive** |
-| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **24k msg/s** | **143k msg/s** | **🚀 829k msg/s** | **1.66x FASTER than fixpp!** |
+| **Short (Heartbeat)** | ~100k msg/s | ~1.5M msg/s | ~2.7M msg/s | **793k msg/s** | **4.0M msg/s** | N/A | **1.5x faster than fixpp** |
+| **Medium (Order)** | ~67k msg/s | ~1.0M msg/s | ~2.5M msg/s | **485k msg/s** | **1.2M msg/s** | N/A | **Competitive** |
+| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **114k msg/s** | **143k msg/s** | **🚀 829k msg/s** | **1.66x FASTER than fixpp!** |
 
 **Notes:**
 - **HFT**: General-purpose fast parser with AVX-512 SIMD, optimized tag matching, and SoA layout
@@ -83,8 +83,8 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 | Message Type | simplefix (Python) | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT | HFT Result |
 |--------------|-------------------|----------------|-------------|--------------|-------------|------------|
-| **Short (Heartbeat)** | ~83k msg/s | ~800k msg/s | ~3.7M msg/s | **650k msg/s** | **3.8M msg/s** | **Matches fixpp** |
-| **Medium (Order)** | ~71k msg/s | ~650k msg/s | ~3.0M msg/s | **611k msg/s** | **1.8M msg/s** | 1.6x slower |
+| **Short (Heartbeat)** | ~83k msg/s | ~800k msg/s | ~3.7M msg/s | **1.14M msg/s** | **3.8M msg/s** | **Matches fixpp** |
+| **Medium (Order)** | ~71k msg/s | ~650k msg/s | ~3.0M msg/s | **1.14M msg/s** | **1.8M msg/s** | 1.6x slower |
 
 > **Note**: `fixpp` uses compile-time message templates (static). `mojofix` builds messages dynamically at runtime (flexible), yet still achieves sub-microsecond latency.
 
@@ -92,10 +92,10 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 | Operation | simplefix | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT |
 |-----------|-----------|----------------|-------------|--------------|-------------|
-| Parse short msg | ~10.0 μs | ~0.67 μs | ~0.37 μs | ~1.64 μs | **~0.20 μs** |
-| Parse medium msg | ~15.0 μs | ~1.00 μs | ~0.40 μs | ~3.55 μs | **~0.60 μs** |
-| Build short msg | ~12.0 μs | ~1.25 μs | ~0.27 μs | ~1.54 μs | **~0.26 μs** |
-| Build medium msg | ~14.1 μs | ~1.54 μs | ~0.33 μs | ~1.63 μs | **~0.55 μs** |
+| Parse short msg | ~10.0 μs | ~0.67 μs | ~0.37 μs | ~1.26 μs | **~0.20 μs** |
+| Parse medium msg | ~15.0 μs | ~1.00 μs | ~0.40 μs | ~2.06 μs | **~0.60 μs** |
+| Build short msg | ~12.0 μs | ~1.25 μs | ~0.27 μs | ~0.88 μs | **~0.26 μs** |
+| Build medium msg | ~14.1 μs | ~1.54 μs | ~0.33 μs | ~0.88 μs | **~0.55 μs** |
 
 **Key Takeaways:**
 - 🚀 **HFT Parser**: 9-10x faster than safe parser, 60x faster than Python
@@ -228,9 +228,9 @@ For ultra-low latency applications, `mojofix` provides an experimental HFT modul
 
 | Feature | Safe (`mojofix`) | HFT (`mojofix.experimental.hft`) | HFT Template (Market Data) |
 |---------|------------------|----------------------------------|----------------------------|
-| **Parser Speed** | ~359k msg/sec | **~4.0M msg/sec** (11x faster) | **~829k msg/sec** (snapshots) |
+| **Parser Speed** | ~793k msg/sec | **~4.0M msg/sec** (5x faster) | **~829k msg/sec** (snapshots) |
 | **Parser Latency** | ~2.78 μs | **~0.25 μs** | **~1.2 μs** (long msgs) |
-| **Builder Speed** | ~650k msg/sec | **~3.8M msg/sec** (5.8x faster) | N/A |
+| **Builder Speed** | ~1.14M msg/sec | **~3.8M msg/sec** (3.3x faster) | N/A |
 | **Memory** | Safe (Heap + Dict) | Manual w/ Indexing | Fixed Arrays (Stack) |
 | **Design** | Allocation per message | Zero-copy + Buffer Reuse | Template + Zero Alloc |
 | **Status** | Production Ready | Experimental | Experimental |

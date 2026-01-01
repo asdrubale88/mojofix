@@ -5,6 +5,15 @@ comptime SOH_CHAR = chr(1)
 comptime SOH = SOH_CHAR
 
 
+struct FixTags:
+    """Standard FIX field tags used internally."""
+
+    comptime BEGIN_STRING = 8
+    comptime BODY_LENGTH = 9
+    comptime MSG_TYPE = 35
+    comptime CHECKSUM = 10
+
+
 struct FixField(Copyable, Movable, Stringable):
     var tag: Int
     var value: String
@@ -220,20 +229,30 @@ struct FixMessage(Copyable, Movable, Stringable):
         :param nth: Which occurrence to return (1 = first, 2 = second, etc.)
         :return: Field value if found, None otherwise
         """
-        var count = 0
-        # Search header fields first
+        var header_indices = self._find_in_header(tag)
+        if len(header_indices) >= nth:
+            return self.header_fields[header_indices[nth - 1]].value
+
+        var body_indices = self._find_in_body(tag)
+        var remaining = nth - len(header_indices)
+        if len(body_indices) >= remaining:
+            return self.fields[body_indices[remaining - 1]].value
+
+        return None
+
+    fn _find_in_header(self, tag: Int) -> List[Int]:
+        var indices = List[Int]()
         for i in range(len(self.header_fields)):
             if self.header_fields[i].tag == tag:
-                count += 1
-                if count == nth:
-                    return self.header_fields[i].value
-        # Then search body fields
+                indices.append(i)
+        return indices^
+
+    fn _find_in_body(self, tag: Int) -> List[Int]:
+        var indices = List[Int]()
         for i in range(len(self.fields)):
             if self.fields[i].tag == tag:
-                count += 1
-                if count == nth:
-                    return self.fields[i].value
-        return None
+                indices.append(i)
+        return indices^
 
     fn __getitem__(self, tag: Int) -> Optional[String]:
         """Syntactic sugar for get(tag).
@@ -326,23 +345,16 @@ struct FixMessage(Copyable, Movable, Stringable):
         :param nth: Which occurrence to remove (1-indexed)
         :return: True if field was found and removed, False otherwise
         """
-        var count = 0
+        var header_indices = self._find_in_header(tag)
+        if len(header_indices) >= nth:
+            _ = self.header_fields.pop(header_indices[nth - 1])
+            return True
 
-        # Search header fields first
-        for i in range(len(self.header_fields)):
-            if self.header_fields[i].tag == tag:
-                count += 1
-                if count == nth:
-                    _ = self.header_fields.pop(i)
-                    return True
-
-        # Then search body fields
-        for i in range(len(self.fields)):
-            if self.fields[i].tag == tag:
-                count += 1
-                if count == nth:
-                    _ = self.fields.pop(i)
-                    return True
+        var body_indices = self._find_in_body(tag)
+        var remaining = nth - len(header_indices)
+        if len(body_indices) >= remaining:
+            _ = self.fields.pop(body_indices[remaining - 1])
+            return True
 
         return False
 
@@ -352,16 +364,16 @@ struct FixMessage(Copyable, Movable, Stringable):
         Usage: msg[55] = "AAPL"  # Set Symbol field
         """
         # Try to update existing field in header
-        for i in range(len(self.header_fields)):
-            if self.header_fields[i].tag == tag:
-                self.header_fields[i].value = value
-                return
+        var header_indices = self._find_in_header(tag)
+        if len(header_indices) > 0:
+            self.header_fields[header_indices[0]].value = value
+            return
 
         # Try to update existing field in body
-        for i in range(len(self.fields)):
-            if self.fields[i].tag == tag:
-                self.fields[i].value = value
-                return
+        var body_indices = self._find_in_body(tag)
+        if len(body_indices) > 0:
+            self.fields[body_indices[0]].value = value
+            return
 
         # Field doesn't exist, append to body
         self.append_pair(tag, value)
@@ -388,67 +400,86 @@ struct FixMessage(Copyable, Movable, Stringable):
         # Pass 1: Scan header fields
         for i in range(len(self.header_fields)):
             var f = self.header_fields[i].copy()
-            if f.tag == 8:
+            if f.tag == FixTags.BEGIN_STRING:
                 f8 = f.value
-            elif f.tag == 9:
+            elif f.tag == FixTags.BODY_LENGTH:
                 pass  # Auto-calculated
-            elif f.tag == 10:
+            elif f.tag == FixTags.CHECKSUM:
                 pass  # Auto-calculated
-            elif f.tag == 35:
+            elif f.tag == FixTags.MSG_TYPE:
                 f35 = f.value
                 body_len += 4 + len(f.value)  # 35=...SOH
             else:
-                body_len += len(String(f.tag)) + 1 + len(f.value) + 1
+                body_len += self._tag_len(f.tag) + 1 + len(f.value) + 1
 
         # Pass 1: Scan body fields
         for i in range(len(self.fields)):
             var f = self.fields[i].copy()
-            if f.tag == 8:
+            if f.tag == FixTags.BEGIN_STRING:
                 f8 = f.value
-            elif f.tag == 9:
+            elif f.tag == FixTags.BODY_LENGTH:
                 pass
-            elif f.tag == 10:
+            elif f.tag == FixTags.CHECKSUM:
                 pass
-            elif f.tag == 35:
+            elif f.tag == FixTags.MSG_TYPE:
                 f35 = f.value
                 body_len += 4 + len(f.value)
             else:
-                body_len += len(String(f.tag)) + 1 + len(f.value) + 1
+                body_len += self._tag_len(f.tag) + 1 + len(f.value) + 1
 
         # Estimate header size (8=... + 9=...) roughly 20-30 bytes
         # Allocate buffer with single allocation
         var buf = List[UInt8]()
         buf.reserve(body_len + 50)
 
+        var soh_byte = UInt8(1)
+        var eq_byte = UInt8(61)
+
         # Pass 2: Write
         # Write 8
         if f8:
-            var s = "8=" + f8.value() + soh
-            buf.extend(s.as_bytes())
+            buf.extend(String("8=").as_bytes())
+            buf.extend(f8.value().as_bytes())
+            buf.append(soh_byte)
 
         # Write 9
-        var s9 = "9=" + String(body_len) + soh
-        buf.extend(s9.as_bytes())
+        buf.extend(String("9=").as_bytes())
+        buf.extend(String(body_len).as_bytes())
+        buf.append(soh_byte)
 
         # Write 35
         if f35:
-            var s = "35=" + f35.value() + soh
-            buf.extend(s.as_bytes())
+            buf.extend(String("35=").as_bytes())
+            buf.extend(f35.value().as_bytes())
+            buf.append(soh_byte)
 
         # Write other fields (Header)
         for i in range(len(self.header_fields)):
             var f = self.header_fields[i].copy()
-            if f.tag != 8 and f.tag != 9 and f.tag != 10 and f.tag != 35:
-                # Optimized write avoiding String(field)
-                var s = String(f.tag) + "=" + f.value + soh
-                buf.extend(s.as_bytes())
+            if (
+                f.tag != FixTags.BEGIN_STRING
+                and f.tag != FixTags.BODY_LENGTH
+                and f.tag != FixTags.CHECKSUM
+                and f.tag != FixTags.MSG_TYPE
+            ):
+                self._write_int(buf, f.tag)
+                buf.append(eq_byte)
+                buf.extend(f.value.as_bytes())
+                buf.append(soh_byte)
 
         # Write other fields (Body)
         for i in range(len(self.fields)):
             var f = self.fields[i].copy()
-            if f.tag != 8 and f.tag != 9 and f.tag != 10 and f.tag != 35:
-                var s = String(f.tag) + "=" + f.value + soh
-                buf.extend(s.as_bytes())
+            if (
+                f.tag != FixTags.BEGIN_STRING
+                and f.tag != FixTags.BODY_LENGTH
+                and f.tag != FixTags.CHECKSUM
+                and f.tag != FixTags.MSG_TYPE
+            ):
+                self._write_int(buf, f.tag)
+                buf.append(eq_byte)
+                buf.extend(f.value.as_bytes())
+                buf.append(soh_byte)
 
         # Create string once
         var out_msg = String(bytes=buf)
@@ -507,13 +538,11 @@ struct FixMessage(Copyable, Movable, Stringable):
         :return: True if field exists, False otherwise
         """
         # Check header
-        for i in range(len(self.header_fields)):
-            if self.header_fields[i].tag == tag:
-                return True
+        if len(self._find_in_header(tag)) > 0:
+            return True
         # Check body
-        for i in range(len(self.fields)):
-            if self.fields[i].tag == tag:
-                return True
+        if len(self._find_in_body(tag)) > 0:
+            return True
         return False
 
     fn clone(self) -> FixMessage:
@@ -542,13 +571,15 @@ struct FixMessage(Copyable, Movable, Stringable):
         """
         var values = List[String]()
         # Search header
-        for i in range(len(self.header_fields)):
-            if self.header_fields[i].tag == tag:
-                values.append(self.header_fields[i].value)
+        var header_indices = self._find_in_header(tag)
+        for i in range(len(header_indices)):
+            values.append(self.header_fields[header_indices[i]].value)
+
         # Search body
-        for i in range(len(self.fields)):
-            if self.fields[i].tag == tag:
-                values.append(self.fields[i].value)
+        var body_indices = self._find_in_body(tag)
+        for i in range(len(body_indices)):
+            values.append(self.fields[body_indices[i]].value)
+
         return values^
 
     fn validate(self) -> Bool:
@@ -559,9 +590,9 @@ struct FixMessage(Copyable, Movable, Stringable):
         :return: True if valid, False otherwise
         """
         # Check required fields: BeginString (8), MsgType (35)
-        if not self.has_field(8):
+        if not self.has_field(FixTags.BEGIN_STRING):
             return False
-        if not self.has_field(35):
+        if not self.has_field(FixTags.MSG_TYPE):
             return False
 
         # Message is valid if it has required fields
@@ -659,3 +690,34 @@ struct FixMessage(Copyable, Movable, Stringable):
         else:
             # Fallback for larger numbers
             return String(n)
+
+    @always_inline
+    fn _tag_len(self, tag: Int) -> Int:
+        """Calculate number of digits in tag without allocation."""
+        if tag < 10:
+            return 1
+        if tag < 100:
+            return 2
+        if tag < 1000:
+            return 3
+        if tag < 10000:
+            return 4
+        return 5
+
+    @always_inline
+    fn _write_int(self, mut buf: List[UInt8], val: Int):
+        """Write integer bytes directly to buffer without string allocation."""
+        if val < 10:
+            buf.append(UInt8(val + 48))
+            return
+        if val < 100:
+            buf.append(UInt8((val // 10) + 48))
+            buf.append(UInt8((val % 10) + 48))
+            return
+        if val < 1000:
+            buf.append(UInt8((val // 100) + 48))
+            buf.append(UInt8(((val // 10) % 10) + 48))
+            buf.append(UInt8((val % 10) + 48))
+            return
+        # Fallback for larger (rare in FIX tags)
+        buf.extend(String(val).as_bytes())

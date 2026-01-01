@@ -1,5 +1,5 @@
 from collections import List, Optional
-from mojofix.message import FixMessage, FixField
+from mojofix.message import FixMessage, FixField, FixTags
 
 comptime SOH = chr(1)
 
@@ -69,7 +69,7 @@ struct FixParser:
         if len(self.buffer) == 0:
             return None
 
-        var start_pos = self.buffer.find("8=")
+        var start_pos = self.buffer.find(String(FixTags.BEGIN_STRING) + "=")
         if start_pos == -1:
             return None
 
@@ -77,7 +77,7 @@ struct FixParser:
             self.buffer = String(self.buffer[start_pos:])
             _ = start_pos
 
-        var pattern_9 = String(SOH) + "9="
+        var pattern_9 = String(SOH) + String(FixTags.BODY_LENGTH) + "="
         var pos_9 = self.buffer.find(pattern_9)
         if pos_9 == -1:
             return None
@@ -124,17 +124,10 @@ struct FixParser:
                 # No more fields
                 break
 
-            # Extract tag number
-            var tag_str = String(raw[tag_start:eq_pos])
-            if len(tag_str) == 0:
-                point += 1
-                continue
-
-            var tag: Int
-            try:
-                tag = Int(tag_str)
-            except:
-                # Invalid tag, skip this character
+            # Extract tag number optimized
+            var tag = self._parse_tag_fast(raw, tag_start, eq_pos)
+            if tag == 0:
+                # Invalid tag or parse error
                 point += 1
                 continue
 
@@ -193,3 +186,32 @@ struct FixParser:
             msg.append_pair(tag, value)
 
         return msg^
+
+    @always_inline
+    fn _parse_tag_fast(self, s: String, start_pos: Int, end_pos: Int) -> Int:
+        """Parse integer tag from string slice without allocation.
+
+        Optimized for positive integers. Returns 0 on error.
+        """
+        if start_pos >= end_pos:
+            return 0
+
+        # Access internal pointer for speed would be ideal, but using getitem is safe fallback
+        # Given we are inside FixParser which holds 'buffer' as String, we are parsing 'raw' which is a slice.
+
+        var res = 0
+        var ptr = s.unsafe_ptr() + start_pos
+        var len = end_pos - start_pos
+
+        # Check first char
+        var first = ptr.load(0)
+        if first < 48 or first > 57:
+            return 0
+
+        for i in range(len):
+            var c = ptr.load(i)
+            if c < 48 or c > 57:
+                return 0
+            res = res * 10 + Int(c - 48)
+
+        return res
