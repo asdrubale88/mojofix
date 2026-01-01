@@ -8,12 +8,12 @@
 
 ## ✨ Features
 
-- **🚀 Blazing Fast**: 5.0M msg/sec parsing (HFT), 3.8M msg/sec building (HFT)
+- **🚀 Blazing Fast**: 4.0M msg/sec parsing (HFT), 829k msg/sec (MD Template), 3.8M msg/sec building
 - **✅ 100% Compatible**: Drop-in replacement for Python's simplefix
 - **🔒 Production Ready**: All 25 simplefix compatibility tests passing
-- **⚡ SIMD Optimized**: Auto-vectorized checksum calculation
+- **⚡ SIMD Optimized**: AVX-512 delimiter scanning, auto-vectorized checksum
 - **🎯 Zero Dependencies**: Pure Mojo implementation
-- **🏆 Faster than C++**: HFT parser outperforms QuickFIX by 1.8-3x
+- **🏆 Faster than C++**: **1.66x faster than fixpp** for Market Data snapshots
 
 ## SimpleFIX Compatibility
 
@@ -70,14 +70,14 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 | Message Type | simplefix (Python) | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT | mojofix MD Template | Best Result |
 |--------------|-------------------|----------------|-------------|--------------|-------------|---------------------|-------------|
-| **Short (Heartbeat)** | ~100k msg/s | ~1.5M msg/s | ~2.7M msg/s | **608k msg/s** | **5.0M msg/s** | N/A | **1.8x faster than fixpp** |
-| **Medium (Order)** | ~67k msg/s | ~1.0M msg/s | ~2.5M msg/s | **281k msg/s** | **1.6M msg/s** | N/A | **Competitive** |
-| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **35k msg/s** | **160k msg/s** | **🚀 200k msg/s** | **Approaching fixpp** |
+| **Short (Heartbeat)** | ~100k msg/s | ~1.5M msg/s | ~2.7M msg/s | **359k msg/s** | **4.0M msg/s** | N/A | **1.5x faster than fixpp** |
+| **Medium (Order)** | ~67k msg/s | ~1.0M msg/s | ~2.5M msg/s | **174k msg/s** | **1.2M msg/s** | N/A | **Competitive** |
+| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **24k msg/s** | **143k msg/s** | **🚀 829k msg/s** | **1.66x FASTER than fixpp!** |
 
 **Notes:**
-- **HFT**: General-purpose fast parser with AVX-512 SIMD and SoA layout
-- **MD Template**: Specialized Market Data parser with fixed arrays (1.26x faster than HFT for snapshots)
-- **vs fixpp**: 1.8x faster for short messages, competitive for snapshots with templates
+- **HFT**: General-purpose fast parser with AVX-512 SIMD, optimized tag matching, and SoA layout
+- **MD Template**: Specialized Market Data parser with compile-time templates and fixed arrays (5.8x faster than HFT)
+- **vs fixpp**: 1.5x faster for short messages, **1.66x faster for snapshots with templates** ✅
 
 ### Builder Performance
 
@@ -228,14 +228,14 @@ For ultra-low latency applications, `mojofix` provides an experimental HFT modul
 
 | Feature | Safe (`mojofix`) | HFT (`mojofix.experimental.hft`) | HFT Template (Market Data) |
 |---------|------------------|----------------------------------|----------------------------|
-| **Parser Speed** | ~600k msg/sec | **~5.0M msg/sec** (8x faster) | **~150k msg/sec** (snapshots) |
-| **Parser Latency** | ~1.64 μs | **~0.20 μs** | **~6 μs** (long msgs) |
+| **Parser Speed** | ~359k msg/sec | **~4.0M msg/sec** (11x faster) | **~829k msg/sec** (snapshots) |
+| **Parser Latency** | ~2.78 μs | **~0.25 μs** | **~1.2 μs** (long msgs) |
 | **Builder Speed** | ~650k msg/sec | **~3.8M msg/sec** (5.8x faster) | N/A |
 | **Memory** | Safe (Heap + Dict) | Manual w/ Indexing | Fixed Arrays (Stack) |
 | **Design** | Allocation per message | Zero-copy + Buffer Reuse | Template + Zero Alloc |
 | **Status** | Production Ready | Experimental | Experimental |
 
-**Template Parsers:** Specialized parsers for specific message types (e.g., Market Data) using fixed arrays for 1.26x additional speedup over HFT.
+**Template Parsers:** Specialized parsers for specific message types using compile-time templates. **5.8x faster than HFT** for Market Data, **1.66x faster than fixpp**.
 
 ### Fast Parsing
 

@@ -69,7 +69,7 @@ struct MarketDataParser:
         pass
 
     fn parse_incremental(mut self, data: String) raises -> MarketDataMessage:
-        """Parse Market Data Incremental message.
+        """Parse Market Data Incremental message (safe mode).
 
         Args:
             data: Raw FIX message string.
@@ -92,8 +92,8 @@ struct MarketDataParser:
             if eq_pos == -1:
                 break
 
-            # Parse tag
-            var tag = self._parse_int_bytes(bytes, pos, eq_pos)
+            # Optimized tag parsing (direct integer ops)
+            var tag = self._parse_tag_fast(bytes, pos, eq_pos)
             if tag == -1:
                 pos += 1
                 continue
@@ -114,6 +114,47 @@ struct MarketDataParser:
             if msg._count >= MAX_FIELDS:
                 raise Error("Message exceeds maximum field count")
 
+            msg.add_field(tag, value_start, value_end)
+
+        return msg^
+
+    fn parse_unchecked(mut self, data: String) -> MarketDataMessage:
+        """Parse Market Data message in optimistic mode (no validation).
+
+        UNSAFE: Assumes well-formed FIX message. Skips validation for maximum speed.
+        Use only when message source is trusted (e.g., internal venue feed).
+
+        Args:
+            data: Raw FIX message string.
+
+        Returns:
+            Parsed message with fixed arrays.
+        """
+        var msg = MarketDataMessage(data)
+
+        var pos = 0
+        var length = len(data)
+        var bytes = data.unsafe_ptr()
+
+        while pos < length:
+            # Find '=' (no error check)
+            var eq_pos = self._find_byte_unchecked(bytes, pos, length, ord("="))
+            if eq_pos == -1:
+                break
+
+            # Parse tag (no validation)
+            var tag = self._parse_tag_unchecked(bytes, pos, eq_pos)
+
+            var value_start = eq_pos + 1
+
+            # Find SOH (no error check)
+            var soh_pos = self._find_byte_unchecked(
+                bytes, value_start, length, SOH
+            )
+            var value_end = soh_pos if soh_pos != -1 else length
+            pos = value_end + 1
+
+            # Add field (no bounds check)
             msg.add_field(tag, value_start, value_end)
 
         return msg^
@@ -168,3 +209,66 @@ struct MarketDataParser:
                 return -1
             res = res * 10 + digit
         return res
+
+    @always_inline
+    fn _parse_tag_fast(
+        self, bytes: UnsafePointer[UInt8], start: Int, end: Int
+    ) -> Int:
+        """Parse tag with optimized integer operations (1-3 digit tags)."""
+        var len = end - start
+        if len == 1:
+            return Int(bytes[start]) - 48
+        elif len == 2:
+            return (Int(bytes[start]) - 48) * 10 + (Int(bytes[start + 1]) - 48)
+        elif len == 3:
+            return (
+                (Int(bytes[start]) - 48) * 100
+                + (Int(bytes[start + 1]) - 48) * 10
+                + (Int(bytes[start + 2]) - 48)
+            )
+        else:
+            # Fallback for longer tags
+            return self._parse_int_bytes(bytes, start, end)
+
+    @always_inline
+    fn _parse_tag_unchecked(
+        self, bytes: UnsafePointer[UInt8], start: Int, end: Int
+    ) -> Int:
+        """Parse tag without validation (optimistic mode)."""
+        var len = end - start
+        if len == 1:
+            return Int(bytes[start]) - 48
+        elif len == 2:
+            return (Int(bytes[start]) - 48) * 10 + (Int(bytes[start + 1]) - 48)
+        else:
+            return (
+                (Int(bytes[start]) - 48) * 100
+                + (Int(bytes[start + 1]) - 48) * 10
+                + (Int(bytes[start + 2]) - 48)
+            )
+
+    @always_inline
+    fn _find_byte_unchecked(
+        self, bytes: UnsafePointer[UInt8], start: Int, end: Int, char: Int
+    ) -> Int:
+        """Find byte without bounds validation (optimistic mode)."""
+        # Simplified SIMD search, no error handling
+        comptime width = 64
+        var target = SIMD[DType.uint8, width](UInt8(char))
+        var i = start
+
+        while i + width <= end:
+            var chunk = bytes.load[width=width](i)
+            var diff = chunk ^ target
+            if diff.reduce_min() == 0:
+                for j in range(width):
+                    if chunk[j] == UInt8(char):
+                        return i + j
+            i += width
+
+        # Scalar cleanup
+        while i < end:
+            if Int(bytes[i]) == char:
+                return i
+            i += 1
+        return -1

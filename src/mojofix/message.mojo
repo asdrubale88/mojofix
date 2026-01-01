@@ -633,3 +633,29 @@ struct FixMessage(Copyable, Movable, Stringable):
         :param header: If True, append to header
         """
         self.append_utc_timestamp(tag, timestamp, precision, header)
+
+    @always_inline
+    fn _int_to_string_fast(self, n: Int) -> String:
+        """Fast integer to string conversion for common tag numbers.
+
+        Optimized for 1-3 digit tags (covers 99% of FIX tags).
+        Avoids String(Int) allocation overhead.
+        """
+        if n < 10:
+            return String(chr(n + 48))
+        elif n < 100:
+            var d1 = n // 10
+            var d2 = n % 10
+            return String(chr(d1 + 48)) + String(chr(d2 + 48))
+        elif n < 1000:
+            var d1 = n // 100
+            var d2 = (n // 10) % 10
+            var d3 = n % 10
+            return (
+                String(chr(d1 + 48))
+                + String(chr(d2 + 48))
+                + String(chr(d3 + 48))
+            )
+        else:
+            # Fallback for larger numbers
+            return String(n)

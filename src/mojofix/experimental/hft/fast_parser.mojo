@@ -81,12 +81,13 @@ struct FastParser:
                 pos += 1
                 continue
 
-            # Check if this is a raw data tag
-            var is_raw_data = False
-            for i in range(len(self.raw_data_tags)):
-                if tag == self.raw_data_tags[i]:
-                    is_raw_data = True
-                    break
+            # Check if this is a raw data tag (optimized with direct matching)
+            var is_raw_data = (
+                self._match_tag_fast(bytes, pos, 95)
+                or self._match_tag_fast(bytes, pos, 96)
+                or self._match_tag_fast(bytes, pos, 212)
+                or self._match_tag_fast(bytes, pos, 213)
+            )
 
             var value_start = eq_pos + 1
             var value_end: Int
@@ -111,14 +112,12 @@ struct FastParser:
             # Store field indices
             msg_in.add_field(tag, value_start, value_end)
 
-            # Check if this is a raw length tag
-            var is_raw_len = False
-            for i in range(len(self.raw_len_tags)):
-                if tag == self.raw_len_tags[i]:
-                    is_raw_len = True
-                    break
-
-            if is_raw_len:
+            # Check if this is a raw length tag (optimized with direct matching)
+            if self._match_tag_fast(
+                bytes, pos - (value_end - value_start + 2), 93
+            ) or self._match_tag_fast(
+                bytes, pos - (value_end - value_start + 2), 95
+            ):
                 # Optimized zero-copy parsing
                 raw_len = self._parse_int_bytes(bytes, value_start, value_end)
 
@@ -218,3 +217,35 @@ struct FastParser:
             i += 1
 
         return -result if negative else result
+
+    @always_inline
+    fn _match_tag_fast(
+        self, bytes: UnsafePointer[UInt8], pos: Int, tag: Int
+    ) -> Bool:
+        """Check if tag matches at position (optimized for 1-3 digits).
+
+        Avoids parsing by directly comparing bytes.
+        Much faster than parse + compare for known tags.
+        """
+        comptime EQ = ord("=")
+
+        if tag < 10:
+            return Int(bytes[pos]) == (tag + 48) and Int(bytes[pos + 1]) == EQ
+        elif tag < 100:
+            var d1 = tag // 10
+            var d2 = tag % 10
+            return (
+                Int(bytes[pos]) == (d1 + 48)
+                and Int(bytes[pos + 1]) == (d2 + 48)
+                and Int(bytes[pos + 2]) == EQ
+            )
+        else:  # 3 digits
+            var d1 = tag // 100
+            var d2 = (tag // 10) % 10
+            var d3 = tag % 10
+            return (
+                Int(bytes[pos]) == (d1 + 48)
+                and Int(bytes[pos + 1]) == (d2 + 48)
+                and Int(bytes[pos + 2]) == (d3 + 48)
+                and Int(bytes[pos + 3]) == EQ
+            )

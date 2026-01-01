@@ -45,3 +45,7 @@ from mojofix.experimental.hft.market_data_parser import (
     MarketDataParser,
     MarketDataMessage,
 )
+from mojofix.experimental.hft.template_parser import (
+    TemplateParser,
+    TemplateMessage,
+)
