@@ -381,14 +381,37 @@ struct FixMessage(Copyable, Movable, Stringable):
     fn encode(self, raw: Bool = False) -> String:
         var soh = String(SOH_CHAR)
         if raw:
-            var res = String("")
-            # Handle header fields first
+            # OPTIMIZATION: Calculate total length first to avoid reallocations
+            var total_len = 0
             for i in range(len(self.header_fields)):
-                res += String(self.header_fields[i]) + soh
-            # Then body fields
+                var f = self.header_fields[i].copy()
+                total_len += self._tag_len(f.tag) + 1 + len(f.value) + 1
             for i in range(len(self.fields)):
-                res += String(self.fields[i]) + soh
-            return res
+                var f = self.fields[i].copy()
+                total_len += self._tag_len(f.tag) + 1 + len(f.value) + 1
+
+            var buf = List[UInt8]()
+            buf.reserve(total_len)
+            var soh_byte = UInt8(1)
+            var eq_byte = UInt8(61)
+
+            # Write header fields
+            for i in range(len(self.header_fields)):
+                var f = self.header_fields[i].copy()
+                self._write_int(buf, f.tag)
+                buf.append(eq_byte)
+                buf.extend(f.value.as_bytes())
+                buf.append(soh_byte)
+
+            # Write body fields
+            for i in range(len(self.fields)):
+                var f = self.fields[i].copy()
+                self._write_int(buf, f.tag)
+                buf.append(eq_byte)
+                buf.extend(f.value.as_bytes())
+                buf.append(soh_byte)
+
+            return String(bytes=buf)
 
         var f8: Optional[String] = None
         var f35: Optional[String] = None

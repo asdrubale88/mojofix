@@ -141,8 +141,10 @@ var all_values = msg.get_all(447)
 
 ### Message Operations
 
-#### encode() -> String
+#### encode(raw: Bool = False) -> String
 Encode message to FIX protocol string.
+- `raw=True`: Encodes fields exactly as they are. **Optimized for performance** (single allocation).
+- `raw=False`: Calculates BodyLength(9) and Checksum(10), adds BeginString(8) and MsgType(35) if missing.
 
 ```mojo
 var encoded = msg.encode()
@@ -204,6 +206,9 @@ var total = msg.count()
 ## FixParser
 
 Parser for FIX protocol messages.
+
+> [!NOTE]
+> `FixParser` is the standard, safe parser. For extremely high-throughput applications, see `mojofix.experimental.hft.FastParser` which offers zero-copy parsing but is currently experimental.
 
 ### Creation
 
@@ -303,6 +308,9 @@ if parser.acquire_buffer():
 ## Experimental HFT Module
 
 ### FastParser
+
+> [!IMPORTANT]
+> **Safety Notice**: HFT components (`FastParser`/`FastBuilder`) use `UnsafePointer` internally to achieve maximum performance. While extensively tested, they do not provide the same memory safety guarantees as the standard `FixParser`. Use with caution in critical paths where safety > speed.
 
 High-performance zero-copy parser (9x faster than safe parser).
 

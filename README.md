@@ -235,6 +235,16 @@ For ultra-low latency applications, `mojofix` provides an experimental HFT modul
 | **Design** | Allocation per message | Zero-copy + Buffer Reuse | Template + Zero Alloc |
 | **Status** | Production Ready | Experimental | Experimental |
 
+### 🔍 Which Parser Should I Use?
+
+| Need | Recommended Parser | Why? |
+|------|-------------------|------|
+| **"I just want to parse FIX messages safely"** | `FixParser` (Safe) | Memory-safe, Python-compatible, hard to misuse. 100% crash-proof. |
+| **"I need maximum speed for HFT"** | `FastParser` (HFT) | 5x speedup using SIMD/Zero-copy. Requires managing `String` lifetimes carefully. |
+| **"I process raw Market Data"** | `MarketDataParser` | Template-based, allocation-free. Fastest possible option for specific message types. |
+
+> **Safety Note:** `FixParser` uses owned Strings and is fully memory-safe. `FastParser` uses `UnsafePointer` internally for speed; while tested extensively, it trades theoretical safety guarantees for raw performance.
+
 **Template Parsers:** Specialized parsers for specific message types using compile-time templates. **5.8x faster than HFT** for Market Data, **1.66x faster than fixpp**.
 
 ### Fast Parsing

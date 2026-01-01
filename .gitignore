@@ -24,3 +24,6 @@ dist/
 
 # Benchmarks validation output
 benchmark_data.json
+kgen.trace.json.time-events.txt
+kgen.trace.json.time-trace
+mojo_knowledge_base.xml
