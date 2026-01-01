@@ -72,11 +72,11 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 |--------------|-------------------|----------------|-------------|--------------|-------------|---------------------|-------------|
 | **Short (Heartbeat)** | ~100k msg/s | ~1.5M msg/s | ~2.7M msg/s | **608k msg/s** | **5.0M msg/s** | N/A | **1.8x faster than fixpp** |
 | **Medium (Order)** | ~67k msg/s | ~1.0M msg/s | ~2.5M msg/s | **281k msg/s** | **1.6M msg/s** | N/A | **Competitive** |
-| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **35k msg/s** | **160k msg/s** | **🚀 47k msg/s** | **Approaching fixpp** |
+| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **35k msg/s** | **160k msg/s** | **🚀 200k msg/s** | **Approaching fixpp** |
 
 **Notes:**
 - **HFT**: General-purpose fast parser with AVX-512 SIMD and SoA layout
-- **MD Template**: Specialized Market Data Incremental parser with fixed arrays (1.62x faster than HFT for snapshots)
+- **MD Template**: Specialized Market Data parser with fixed arrays (1.26x faster than HFT for snapshots)
 - **vs fixpp**: 1.8x faster for short messages, competitive for snapshots with templates
 
 ### Builder Performance
@@ -228,14 +228,14 @@ For ultra-low latency applications, `mojofix` provides an experimental HFT modul
 
 | Feature | Safe (`mojofix`) | HFT (`mojofix.experimental.hft`) | HFT Template (Market Data) |
 |---------|------------------|----------------------------------|----------------------------|
-| **Parser Speed** | ~600k msg/sec | **~5.0M msg/sec** (8x faster) | **~47k msg/sec** (snapshots) |
-| **Parser Latency** | ~1.64 μs | **~0.20 μs** | **~21 μs** (810 fields) |
+| **Parser Speed** | ~600k msg/sec | **~5.0M msg/sec** (8x faster) | **~150k msg/sec** (snapshots) |
+| **Parser Latency** | ~1.64 μs | **~0.20 μs** | **~6 μs** (long msgs) |
 | **Builder Speed** | ~650k msg/sec | **~3.8M msg/sec** (5.8x faster) | N/A |
 | **Memory** | Safe (Heap + Dict) | Manual w/ Indexing | Fixed Arrays (Stack) |
 | **Design** | Allocation per message | Zero-copy + Buffer Reuse | Template + Zero Alloc |
 | **Status** | Production Ready | Experimental | Experimental |
 
-**Template Parsers:** Specialized parsers for specific message types (e.g., Market Data Incremental) using fixed arrays for 1.6x additional speedup.
+**Template Parsers:** Specialized parsers for specific message types (e.g., Market Data) using fixed arrays for 1.26x additional speedup over HFT.
 
 ### Fast Parsing
 
@@ -256,7 +256,7 @@ fn main() raises:
 
 ### Template Parser (Market Data)
 
-For maximum performance on Market Data Incremental messages:
+For maximum performance on Market Data messages:
 
 ```mojo
 from mojofix.experimental.hft import MarketDataParser
@@ -265,7 +265,7 @@ fn main() raises:
     var parser = MarketDataParser()
     
     # Parse Market Data Incremental (MsgType=X)
-    # 1.62x faster than FastParser for large snapshots
+    # 1.26x faster than FastParser for long messages
     var msg = parser.parse_incremental("8=FIX.4.4\x0135=X\x01...")
     
     # Access fields (same API as FastMessage)
