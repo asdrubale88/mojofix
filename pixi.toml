@@ -32,3 +32,6 @@ example-timestamps = "mojo -I src examples/timestamps.mojo"
 
 [dependencies]
 mojo = ">=0.26.1.0.dev2025122805,<0.27"
+
+[pypi-dependencies]
+simplefix = ">=1.0.17, <2"
