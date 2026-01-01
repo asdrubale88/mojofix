@@ -41,3 +41,7 @@ var msg2 = parser.parse("8=FIX.4.2\\x019=40\\x0135=D\\x0155=MSFT\\x01")
 from mojofix.experimental.hft.fast_message import FastMessage, FieldRef
 from mojofix.experimental.hft.fast_parser import FastParser
 from mojofix.experimental.hft.fast_builder import FastBuilder
+from mojofix.experimental.hft.market_data_parser import (
+    MarketDataParser,
+    MarketDataMessage,
+)

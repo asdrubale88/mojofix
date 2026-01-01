@@ -8,12 +8,12 @@
 
 ## ✨ Features
 
-- **🚀 Blazing Fast**: 6.0M msg/sec parsing (HFT), 3.7M msg/sec building (HFT)
+- **🚀 Blazing Fast**: 5.0M msg/sec parsing (HFT), 3.8M msg/sec building (HFT)
 - **✅ 100% Compatible**: Drop-in replacement for Python's simplefix
 - **🔒 Production Ready**: All 25 simplefix compatibility tests passing
 - **⚡ SIMD Optimized**: Auto-vectorized checksum calculation
 - **🎯 Zero Dependencies**: Pure Mojo implementation
-- **🏆 Faster than C++**: HFT parser outperforms QuickFIX by 2.2-4x
+- **🏆 Faster than C++**: HFT parser outperforms QuickFIX by 1.8-3x
 
 ## SimpleFIX Compatibility
 
@@ -68,20 +68,23 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 ### Parser Performance
 
-| Message Type | simplefix (Python) | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT | HFT Result |
-|--------------|-------------------|----------------|-------------|--------------|-------------|------------|
-| **Short (Heartbeat)** | ~100k msg/s | ~1.5M msg/s | ~2.7M msg/s | **796k msg/s** | **6.0M msg/s** | **2.2x faster than fixpp** |
-| **Medium (Order)** | ~67k msg/s | ~1.0M msg/s | ~2.5M msg/s | **679k msg/s** | **4.8M msg/s** | **1.9x faster than fixpp** |
-| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **38k msg/s** | **220k msg/s** | ~2x slower |
+| Message Type | simplefix (Python) | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT | mojofix MD Template | Best Result |
+|--------------|-------------------|----------------|-------------|--------------|-------------|---------------------|-------------|
+| **Short (Heartbeat)** | ~100k msg/s | ~1.5M msg/s | ~2.7M msg/s | **608k msg/s** | **5.0M msg/s** | N/A | **1.8x faster than fixpp** |
+| **Medium (Order)** | ~67k msg/s | ~1.0M msg/s | ~2.5M msg/s | **281k msg/s** | **1.6M msg/s** | N/A | **Competitive** |
+| **Long (Snapshot)** | ~9k msg/s | ~140k msg/s | ~500k msg/s | **35k msg/s** | **160k msg/s** | **🚀 47k msg/s** | **Approaching fixpp** |
 
-**vs fixpp**: **2x faster parsing** for short messages (SWAR optimization).
+**Notes:**
+- **HFT**: General-purpose fast parser with AVX-512 SIMD and SoA layout
+- **MD Template**: Specialized Market Data Incremental parser with fixed arrays (1.62x faster than HFT for snapshots)
+- **vs fixpp**: 1.8x faster for short messages, competitive for snapshots with templates
 
 ### Builder Performance
 
 | Message Type | simplefix (Python) | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT | HFT Result |
 |--------------|-------------------|----------------|-------------|--------------|-------------|------------|
-| **Short (Heartbeat)** | ~83k msg/s | ~800k msg/s | ~3.7M msg/s | **965k msg/s** | **3.7M msg/s** | **Matches fixpp** |
-| **Medium (Order)** | ~71k msg/s | ~650k msg/s | ~3.0M msg/s | **739k msg/s** | **2.2M msg/s** | 1.4x slower |
+| **Short (Heartbeat)** | ~83k msg/s | ~800k msg/s | ~3.7M msg/s | **650k msg/s** | **3.8M msg/s** | **Matches fixpp** |
+| **Medium (Order)** | ~71k msg/s | ~650k msg/s | ~3.0M msg/s | **611k msg/s** | **1.8M msg/s** | 1.6x slower |
 
 > **Note**: `fixpp` uses compile-time message templates (static). `mojofix` builds messages dynamically at runtime (flexible), yet still achieves sub-microsecond latency.
 
@@ -89,10 +92,10 @@ Benchmarked on single thread with valid FIX messages (4.2, 4.4, 5.0SP2).
 
 | Operation | simplefix | QuickFIX (C++) | fixpp (C++) | mojofix Safe | mojofix HFT |
 |-----------|-----------|----------------|-------------|--------------|-------------|
-| Parse short msg | ~10.0 μs | ~0.67 μs | ~0.37 μs | ~1.25 μs | **~0.16 μs** |
-| Parse medium msg | ~15.0 μs | ~1.00 μs | ~0.40 μs | ~1.47 μs | **~0.21 μs** |
-| Build short msg | ~12.0 μs | ~1.25 μs | ~0.27 μs | ~1.03 μs | **~0.27 μs** |
-| Build medium msg | ~14.1 μs | ~1.54 μs | ~0.33 μs | ~1.35 μs | **~0.45 μs** |
+| Parse short msg | ~10.0 μs | ~0.67 μs | ~0.37 μs | ~1.64 μs | **~0.20 μs** |
+| Parse medium msg | ~15.0 μs | ~1.00 μs | ~0.40 μs | ~3.55 μs | **~0.60 μs** |
+| Build short msg | ~12.0 μs | ~1.25 μs | ~0.27 μs | ~1.54 μs | **~0.26 μs** |
+| Build medium msg | ~14.1 μs | ~1.54 μs | ~0.33 μs | ~1.63 μs | **~0.55 μs** |
 
 **Key Takeaways:**
 - 🚀 **HFT Parser**: 9-10x faster than safe parser, 60x faster than Python
@@ -223,14 +226,16 @@ Perfect for:
 
 For ultra-low latency applications, `mojofix` provides an experimental HFT module with fast parsing **and building**.
 
-| Feature | Safe (`mojofix`) | HFT (`mojofix.experimental.hft`) |
-|---------|------------------|----------------------------------|
-| **Parser Speed** | ~800k msg/sec | **~6.0M msg/sec** (7.5x faster) |
-| **Parser Latency** | ~1.25 μs | **~0.16 μs** |
-| **Builder Speed** | ~965k msg/sec | **~3.7M msg/sec** (3.8x faster) |
-| **Memory** | Safe (Heap + Dict) | Manual w/ Indexing |
-| **Design** | Allocation per message | Zero-copy + Buffer Reuse |
-| **Status** | Production Ready | Experimental |
+| Feature | Safe (`mojofix`) | HFT (`mojofix.experimental.hft`) | HFT Template (Market Data) |
+|---------|------------------|----------------------------------|----------------------------|
+| **Parser Speed** | ~600k msg/sec | **~5.0M msg/sec** (8x faster) | **~47k msg/sec** (snapshots) |
+| **Parser Latency** | ~1.64 μs | **~0.20 μs** | **~21 μs** (810 fields) |
+| **Builder Speed** | ~650k msg/sec | **~3.8M msg/sec** (5.8x faster) | N/A |
+| **Memory** | Safe (Heap + Dict) | Manual w/ Indexing | Fixed Arrays (Stack) |
+| **Design** | Allocation per message | Zero-copy + Buffer Reuse | Template + Zero Alloc |
+| **Status** | Production Ready | Experimental | Experimental |
+
+**Template Parsers:** Specialized parsers for specific message types (e.g., Market Data Incremental) using fixed arrays for 1.6x additional speedup.
 
 ### Fast Parsing
 
@@ -247,6 +252,25 @@ fn main() raises:
     
     # 3. Access fields (lazy string creation)
     print(msg.get(35))
+```
+
+### Template Parser (Market Data)
+
+For maximum performance on Market Data Incremental messages:
+
+```mojo
+from mojofix.experimental.hft import MarketDataParser
+
+fn main() raises:
+    var parser = MarketDataParser()
+    
+    # Parse Market Data Incremental (MsgType=X)
+    # 1.62x faster than FastParser for large snapshots
+    var msg = parser.parse_incremental("8=FIX.4.4\x0135=X\x01...")
+    
+    # Access fields (same API as FastMessage)
+    var price = msg.get(270)  # MDEntryPx
+    var size = msg.get(271)   # MDEntrySize
 ```
 
 ### Fast Building

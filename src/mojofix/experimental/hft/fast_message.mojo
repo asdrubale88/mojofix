@@ -29,17 +29,32 @@ struct FastMessage(Movable):
 
     Stores field values as indices into the original message string,
     avoiding string allocations during parsing.
-    Expected performance: 3-5x faster than safe FixMessage.
+
+    Optimized Layout (Structure of Arrays):
+    - Separate arrays for tags, starts, ends
+    - Improves cache locality for tag searches
+    - Reduces memory bandwidth usage
     """
 
     var _data: String  # Owns the message data
-    var fields: List[FieldRef]
+    var _tags: List[Int]
+    var _starts: List[Int]
+    var _ends: List[Int]
 
     fn __init__(out self, data: String):
         """Create message with owned data."""
         self._data = data
-        self.fields = List[FieldRef]()
+        self._tags = List[Int]()
+        self._starts = List[Int]()
+        self._ends = List[Int]()
 
+    fn reserve(mut self, capacity: Int):
+        """Reserve capacity for fields to avoid reallocations."""
+        self._tags.reserve(capacity)
+        self._starts.reserve(capacity)
+        self._ends.reserve(capacity)
+
+    @always_inline
     fn add_field(mut self, tag: Int, value_start: Int, value_end: Int):
         """Add field to message using indices.
 
@@ -48,7 +63,9 @@ struct FastMessage(Movable):
             value_start: Start index of value in _data.
             value_end: End index of value in _data.
         """
-        self.fields.append(FieldRef(tag, value_start, value_end))
+        self._tags.append(tag)
+        self._starts.append(value_start)
+        self._ends.append(value_end)
 
     fn get(self, tag: Int) -> String:
         """Get first occurrence of tag.
@@ -59,13 +76,10 @@ struct FastMessage(Movable):
         Returns:
             Field value, or empty string if not found.
         """
-        for i in range(len(self.fields)):
-            if self.fields[i].tag == tag:
-                return String(
-                    self._data[
-                        self.fields[i].value_start : self.fields[i].value_end
-                    ]
-                )
+        # Optimized SoA search: only scan tags array
+        for i in range(len(self._tags)):
+            if self._tags[i] == tag:
+                return String(self._data[self._starts[i] : self._ends[i]])
         return String("")
 
     fn get_nth(self, tag: Int, nth: Int) -> String:
@@ -79,17 +93,11 @@ struct FastMessage(Movable):
             Field value, or empty string if not found.
         """
         var found = 0
-        for i in range(len(self.fields)):
-            if self.fields[i].tag == tag:
+        for i in range(len(self._tags)):
+            if self._tags[i] == tag:
                 found += 1
                 if found == nth:
-                    return String(
-                        self._data[
-                            self.fields[i]
-                            .value_start : self.fields[i]
-                            .value_end
-                        ]
-                    )
+                    return String(self._data[self._starts[i] : self._ends[i]])
         return String("")
 
     fn has_field(self, tag: Int) -> Bool:
@@ -101,18 +109,21 @@ struct FastMessage(Movable):
         Returns:
             True if tag exists.
         """
-        for i in range(len(self.fields)):
-            if self.fields[i].tag == tag:
+        # Optimized SoA search
+        for i in range(len(self._tags)):
+            if self._tags[i] == tag:
                 return True
         return False
 
     fn field_count(self) -> Int:
         """Get number of fields in message."""
-        return len(self.fields)
+        return len(self._tags)
 
     fn clear(mut self):
         """Clear all fields (for reuse)."""
-        self.fields.clear()
+        self._tags.clear()
+        self._starts.clear()
+        self._ends.clear()
 
     fn count(self) -> Int:
         """Get field count (simplefix-compatible alias).
